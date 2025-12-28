@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: .
+      target: bot
+    container_name: alem-hub-bot
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ALEM_API_URL=${ALEM_API_URL}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    networks:
+      - alem-network
+
+  worker:
+    build:
+      context: .
+      target: worker
+    container_name: alem-hub-worker
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ALEM_API_URL=${ALEM_API_URL}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      - redis
+    networks:
+      - alem-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: alem-hub-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - alem-network
+
+networks:
+  alem-network:
+    driver: bridge
+
+volumes:
+  redis-data:
