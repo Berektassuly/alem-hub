@@ -77,14 +77,14 @@ func NewStudentRegisteredEvent(student *Student) StudentRegisteredEvent {
 // XPGainedEvent - студент получил XP.
 type XPGainedEvent struct {
 	BaseEvent
-	OldXP      XP
-	NewXP      XP
-	Delta      XP
-	Reason     string // task_completed, bonus, correction
-	TaskID     string // Если применимо
-	OldLevel   Level
-	NewLevel   Level
-	LeveledUp  bool
+	OldXP     XP
+	NewXP     XP
+	Delta     XP
+	Reason    string // task_completed, bonus, correction
+	TaskID    string // Если применимо
+	OldLevel  Level
+	NewLevel  Level
+	LeveledUp bool
 }
 
 // EventName возвращает имя события.
@@ -117,10 +117,10 @@ func NewXPGainedEvent(student *Student, oldXP XP, reason string, taskID string) 
 // TaskCompletedEvent - студент выполнил задачу.
 type TaskCompletedEvent struct {
 	BaseEvent
-	TaskID       string
-	TaskName     string
-	XPEarned     XP
-	TotalTasks   int // Общее количество выполненных задач
+	TaskID     string
+	TaskName   string
+	XPEarned   XP
+	TotalTasks int // Общее количество выполненных задач
 }
 
 // EventName возвращает имя события.
@@ -312,8 +312,8 @@ func NewStudentBecameInactiveEvent(student *Student) StudentBecameInactiveEvent 
 // StudentReturnedEvent - неактивный студент вернулся.
 type StudentReturnedEvent struct {
 	BaseEvent
-	DaysAway     int
-	PreviousXP   XP
+	DaysAway      int
+	PreviousXP    XP
 	IsComebackKid bool // Был ли неактивен более 7 дней
 }
 
@@ -440,9 +440,9 @@ func NewStudentStatusChangedEvent(student *Student, oldStatus Status, reason str
 // StudentGraduatedEvent - студент закончил программу.
 type StudentGraduatedEvent struct {
 	BaseEvent
-	FinalXP          XP
-	FinalLevel       Level
-	TotalDaysInProgram int
+	FinalXP             XP
+	FinalLevel          Level
+	TotalDaysInProgram  int
 	TotalTasksCompleted int
 }
 
@@ -461,9 +461,9 @@ func NewStudentGraduatedEvent(student *Student, totalTasks int) StudentGraduated
 			StudentID:   student.ID,
 			StudentName: student.DisplayName,
 		},
-		FinalXP:            student.CurrentXP,
-		FinalLevel:         student.Level(),
-		TotalDaysInProgram: daysInProgram,
+		FinalXP:             student.CurrentXP,
+		FinalLevel:          student.Level(),
+		TotalDaysInProgram:  daysInProgram,
 		TotalTasksCompleted: totalTasks,
 	}
 }
