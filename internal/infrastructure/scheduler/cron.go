@@ -1,680 +1,514 @@
-// Package scheduler implements background job scheduling for Alem Community Hub.
-// It provides cron-like scheduling for periodic tasks such as data synchronization,
-// leaderboard rebuilding, and sending notifications.
 package scheduler
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
-// ══════════════════════════════════════════════════════════════════════════════
-// JOB INTERFACE
-// ══════════════════════════════════════════════════════════════════════════════
-
-// Job defines the interface that all scheduled jobs must implement.
-type Job interface {
-	// Name returns the unique name of the job.
-	Name() string
-
-	// Run executes the job.
-	// The context is cancelled when the scheduler is stopping.
-	Run(ctx context.Context) error
-
-	// Description returns a human-readable description of the job.
-	Description() string
+// CronExpression represents a parsed cron expression.
+// Supports standard 5-field format: minute hour day-of-month month day-of-week
+// Examples:
+//   - "*/5 * * * *"  - every 5 minutes
+//   - "0 */1 * * *"  - every hour
+//   - "0 21 * * *"   - every day at 21:00
+//   - "0 0 * * 0"    - every Sunday at midnight
+type CronExpression struct {
+	raw      string
+	minutes  []int // 0-59
+	hours    []int // 0-23
+	days     []int // 1-31
+	months   []int // 1-12
+	weekdays []int // 0-6 (0 = Sunday)
 }
 
-// JobResult contains the result of a job execution.
-type JobResult struct {
-	JobName     string
-	StartedAt   time.Time
-	CompletedAt time.Time
-	Duration    time.Duration
-	Success     bool
-	Error       error
-	Metadata    map[string]interface{}
+// CronJob represents a scheduled job with its cron expression.
+type CronJob struct {
+	Name       string
+	Expression *CronExpression
+	Job        Job
+	LastRun    time.Time
+	NextRun    time.Time
+	RunCount   int64
+	Enabled    bool
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SCHEDULER
-// ══════════════════════════════════════════════════════════════════════════════
-
-// Scheduler manages and executes scheduled jobs.
-type Scheduler struct {
-	mu sync.RWMutex
-
-	// Configuration
+// CronScheduler manages cron-based job scheduling.
+type CronScheduler struct {
+	jobs     map[string]*CronJob
+	mu       sync.RWMutex
 	logger   *slog.Logger
-	timezone *time.Location
-
-	// State
-	jobs      map[string]*scheduledJob
-	running   bool
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	startedAt time.Time
-
-	// Metrics and history
-	metrics    *SchedulerMetrics
-	lastRuns   map[string]*JobResult
-	runHistory []JobResult
-
-	// Hooks
-	onJobStart    func(jobName string)
-	onJobComplete func(result JobResult)
-	onJobError    func(jobName string, err error)
+	location *time.Location
+	running  bool
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
 }
 
-// scheduledJob wraps a Job with scheduling information.
-type scheduledJob struct {
-	job       Job
-	schedule  Schedule
-	enabled   bool
-	lastRun   time.Time
-	nextRun   time.Time
-	runCount  int64
-	failCount int64
-}
+// CronOption configures the CronScheduler.
+type CronOption func(*CronScheduler)
 
-// SchedulerConfig contains configuration for the Scheduler.
-type SchedulerConfig struct {
-	// Logger for structured logging.
-	Logger *slog.Logger
-
-	// Timezone for schedule calculations (default: UTC).
-	Timezone *time.Location
-
-	// MaxHistorySize is the maximum number of job results to keep in history.
-	MaxHistorySize int
-
-	// EnableMetrics enables metrics collection.
-	EnableMetrics bool
-}
-
-// DefaultSchedulerConfig returns sensible defaults.
-func DefaultSchedulerConfig() SchedulerConfig {
-	return SchedulerConfig{
-		Logger:         slog.Default(),
-		Timezone:       time.UTC,
-		MaxHistorySize: 1000,
-		EnableMetrics:  true,
+// WithLocation sets the timezone for cron expressions.
+func WithLocation(loc *time.Location) CronOption {
+	return func(cs *CronScheduler) {
+		cs.location = loc
 	}
 }
 
-// NewScheduler creates a new Scheduler with the given configuration.
-func NewScheduler(config SchedulerConfig) *Scheduler {
-	if config.Logger == nil {
-		config.Logger = slog.Default()
+// WithCronLogger sets the logger for the cron scheduler.
+func WithCronLogger(logger *slog.Logger) CronOption {
+	return func(cs *CronScheduler) {
+		cs.logger = logger
 	}
-	if config.Timezone == nil {
-		config.Timezone = time.UTC
-	}
-	if config.MaxHistorySize <= 0 {
-		config.MaxHistorySize = 1000
-	}
-
-	s := &Scheduler{
-		logger:     config.Logger,
-		timezone:   config.Timezone,
-		jobs:       make(map[string]*scheduledJob),
-		lastRuns:   make(map[string]*JobResult),
-		runHistory: make([]JobResult, 0, config.MaxHistorySize),
-	}
-
-	if config.EnableMetrics {
-		s.metrics = NewSchedulerMetrics()
-	}
-
-	return s
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// JOB REGISTRATION
-// ══════════════════════════════════════════════════════════════════════════════
-
-// Register adds a job to the scheduler with the given schedule.
-func (s *Scheduler) Register(job Job, schedule Schedule) error {
-	if job == nil {
-		return ErrNilJob
-	}
-	if schedule == nil {
-		return ErrNilSchedule
+// NewCronScheduler creates a new cron-based scheduler.
+func NewCronScheduler(opts ...CronOption) *CronScheduler {
+	cs := &CronScheduler{
+		jobs:     make(map[string]*CronJob),
+		logger:   slog.Default(),
+		location: time.Local,
+		stopCh:   make(chan struct{}),
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	name := job.Name()
-	if _, exists := s.jobs[name]; exists {
-		return fmt.Errorf("%w: %s", ErrJobAlreadyExists, name)
+	for _, opt := range opts {
+		opt(cs)
 	}
 
-	now := time.Now().In(s.timezone)
-	sj := &scheduledJob{
-		job:      job,
-		schedule: schedule,
-		enabled:  true,
-		nextRun:  schedule.Next(now),
+	return cs
+}
+
+// ParseCronExpression parses a cron expression string.
+// Format: minute hour day-of-month month day-of-week
+// Supports: *, */n, n, n-m, n,m,o
+func ParseCronExpression(expr string) (*CronExpression, error) {
+	fields := strings.Fields(expr)
+	if len(fields) != 5 {
+		return nil, fmt.Errorf("invalid cron expression: expected 5 fields, got %d", len(fields))
 	}
 
-	s.jobs[name] = sj
+	ce := &CronExpression{raw: expr}
+	var err error
 
-	s.logger.Info("job registered",
+	ce.minutes, err = parseField(fields[0], 0, 59)
+	if err != nil {
+		return nil, fmt.Errorf("invalid minute field: %w", err)
+	}
+
+	ce.hours, err = parseField(fields[1], 0, 23)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hour field: %w", err)
+	}
+
+	ce.days, err = parseField(fields[2], 1, 31)
+	if err != nil {
+		return nil, fmt.Errorf("invalid day field: %w", err)
+	}
+
+	ce.months, err = parseField(fields[3], 1, 12)
+	if err != nil {
+		return nil, fmt.Errorf("invalid month field: %w", err)
+	}
+
+	ce.weekdays, err = parseField(fields[4], 0, 6)
+	if err != nil {
+		return nil, fmt.Errorf("invalid weekday field: %w", err)
+	}
+
+	return ce, nil
+}
+
+// parseField parses a single cron field.
+func parseField(field string, min, max int) ([]int, error) {
+	var result []int
+
+	// Handle wildcard
+	if field == "*" {
+		for i := min; i <= max; i++ {
+			result = append(result, i)
+		}
+		return result, nil
+	}
+
+	// Handle step values (*/n or n-m/s)
+	if strings.Contains(field, "/") {
+		parts := strings.Split(field, "/")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid step format: %s", field)
+		}
+
+		step, err := strconv.Atoi(parts[1])
+		if err != nil || step <= 0 {
+			return nil, fmt.Errorf("invalid step value: %s", parts[1])
+		}
+
+		var start, end int
+		if parts[0] == "*" {
+			start, end = min, max
+		} else if strings.Contains(parts[0], "-") {
+			rangeParts := strings.Split(parts[0], "-")
+			start, _ = strconv.Atoi(rangeParts[0])
+			end, _ = strconv.Atoi(rangeParts[1])
+		} else {
+			start, _ = strconv.Atoi(parts[0])
+			end = max
+		}
+
+		for i := start; i <= end; i += step {
+			if i >= min && i <= max {
+				result = append(result, i)
+			}
+		}
+		return result, nil
+	}
+
+	// Handle ranges (n-m)
+	if strings.Contains(field, "-") {
+		parts := strings.Split(field, "-")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid range format: %s", field)
+		}
+
+		start, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid range start: %s", parts[0])
+		}
+
+		end, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid range end: %s", parts[1])
+		}
+
+		for i := start; i <= end; i++ {
+			if i >= min && i <= max {
+				result = append(result, i)
+			}
+		}
+		return result, nil
+	}
+
+	// Handle lists (n,m,o)
+	if strings.Contains(field, ",") {
+		parts := strings.Split(field, ",")
+		for _, p := range parts {
+			v, err := strconv.Atoi(strings.TrimSpace(p))
+			if err != nil {
+				return nil, fmt.Errorf("invalid list value: %s", p)
+			}
+			if v >= min && v <= max {
+				result = append(result, v)
+			}
+		}
+		sort.Ints(result)
+		return result, nil
+	}
+
+	// Handle single value
+	v, err := strconv.Atoi(field)
+	if err != nil {
+		return nil, fmt.Errorf("invalid value: %s", field)
+	}
+	if v < min || v > max {
+		return nil, fmt.Errorf("value out of range [%d-%d]: %d", min, max, v)
+	}
+	return []int{v}, nil
+}
+
+// String returns the original cron expression.
+func (ce *CronExpression) String() string {
+	return ce.raw
+}
+
+// Next calculates the next time the cron expression matches after the given time.
+func (ce *CronExpression) Next(after time.Time) time.Time {
+	// Start from the next minute
+	t := after.Add(time.Minute).Truncate(time.Minute)
+
+	// Maximum iterations to prevent infinite loops
+	const maxIterations = 366 * 24 * 60 // One year in minutes
+
+	for i := 0; i < maxIterations; i++ {
+		// Check if current time matches
+		if ce.matches(t) {
+			return t
+		}
+
+		// Advance by one minute
+		t = t.Add(time.Minute)
+	}
+
+	// Should never reach here with valid expressions
+	return time.Time{}
+}
+
+// matches checks if the given time matches the cron expression.
+func (ce *CronExpression) matches(t time.Time) bool {
+	return contains(ce.minutes, t.Minute()) &&
+		contains(ce.hours, t.Hour()) &&
+		contains(ce.days, t.Day()) &&
+		contains(ce.months, int(t.Month())) &&
+		contains(ce.weekdays, int(t.Weekday()))
+}
+
+// contains checks if a slice contains a value.
+func contains(slice []int, val int) bool {
+	for _, v := range slice {
+		if v == val {
+			return true
+		}
+	}
+	return false
+}
+
+// AddJob adds a job with a cron expression.
+func (cs *CronScheduler) AddJob(name string, cronExpr string, job Job) error {
+	expr, err := ParseCronExpression(cronExpr)
+	if err != nil {
+		return fmt.Errorf("failed to parse cron expression: %w", err)
+	}
+
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	now := time.Now().In(cs.location)
+	cs.jobs[name] = &CronJob{
+		Name:       name,
+		Expression: expr,
+		Job:        job,
+		NextRun:    expr.Next(now),
+		Enabled:    true,
+	}
+
+	cs.logger.Info("cron job added",
 		"job", name,
-		"description", job.Description(),
-		"next_run", sj.nextRun.Format(time.RFC3339),
+		"expression", cronExpr,
+		"next_run", cs.jobs[name].NextRun.Format(time.RFC3339),
 	)
 
 	return nil
 }
 
-// Unregister removes a job from the scheduler.
-func (s *Scheduler) Unregister(jobName string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.jobs[jobName]; !exists {
-		return fmt.Errorf("%w: %s", ErrJobNotFound, jobName)
-	}
-
-	delete(s.jobs, jobName)
-	s.logger.Info("job unregistered", "job", jobName)
-
-	return nil
+// RemoveJob removes a job by name.
+func (cs *CronScheduler) RemoveJob(name string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	delete(cs.jobs, name)
+	cs.logger.Info("cron job removed", "job", name)
 }
 
-// EnableJob enables a job by name.
-func (s *Scheduler) EnableJob(jobName string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// EnableJob enables a job.
+func (cs *CronScheduler) EnableJob(name string) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
-	sj, exists := s.jobs[jobName]
+	job, exists := cs.jobs[name]
 	if !exists {
-		return fmt.Errorf("%w: %s", ErrJobNotFound, jobName)
+		return fmt.Errorf("job not found: %s", name)
 	}
 
-	sj.enabled = true
-	sj.nextRun = sj.schedule.Next(time.Now().In(s.timezone))
-	s.logger.Info("job enabled", "job", jobName, "next_run", sj.nextRun)
-
+	job.Enabled = true
+	job.NextRun = job.Expression.Next(time.Now().In(cs.location))
 	return nil
 }
 
-// DisableJob disables a job by name.
-func (s *Scheduler) DisableJob(jobName string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// DisableJob disables a job.
+func (cs *CronScheduler) DisableJob(name string) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
-	sj, exists := s.jobs[jobName]
+	job, exists := cs.jobs[name]
 	if !exists {
-		return fmt.Errorf("%w: %s", ErrJobNotFound, jobName)
+		return fmt.Errorf("job not found: %s", name)
 	}
 
-	sj.enabled = false
-	s.logger.Info("job disabled", "job", jobName)
+	job.Enabled = false
+	return nil
+}
+
+// GetJobStatus returns the status of a job.
+func (cs *CronScheduler) GetJobStatus(name string) (*CronJob, bool) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	job, exists := cs.jobs[name]
+	if !exists {
+		return nil, false
+	}
+
+	// Return a copy to prevent race conditions
+	jobCopy := *job
+	return &jobCopy, true
+}
+
+// ListJobs returns all registered jobs.
+func (cs *CronScheduler) ListJobs() []*CronJob {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	jobs := make([]*CronJob, 0, len(cs.jobs))
+	for _, job := range cs.jobs {
+		jobCopy := *job
+		jobs = append(jobs, &jobCopy)
+	}
+
+	// Sort by next run time
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].NextRun.Before(jobs[j].NextRun)
+	})
+
+	return jobs
+}
+
+// Start begins the cron scheduler loop.
+func (cs *CronScheduler) Start(ctx context.Context) error {
+	cs.mu.Lock()
+	if cs.running {
+		cs.mu.Unlock()
+		return fmt.Errorf("cron scheduler already running")
+	}
+	cs.running = true
+	cs.stopCh = make(chan struct{})
+	cs.mu.Unlock()
+
+	cs.logger.Info("cron scheduler started", "timezone", cs.location.String())
+
+	cs.wg.Add(1)
+	go cs.run(ctx)
 
 	return nil
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// LIFECYCLE
-// ══════════════════════════════════════════════════════════════════════════════
-
-// Start begins the scheduler loop.
-func (s *Scheduler) Start(ctx context.Context) error {
-	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
-		return ErrSchedulerAlreadyRunning
+// Stop gracefully stops the cron scheduler.
+func (cs *CronScheduler) Stop() {
+	cs.mu.Lock()
+	if !cs.running {
+		cs.mu.Unlock()
+		return
 	}
+	cs.running = false
+	close(cs.stopCh)
+	cs.mu.Unlock()
 
-	s.ctx, s.cancel = context.WithCancel(ctx)
-	s.running = true
-	s.startedAt = time.Now()
-	s.mu.Unlock()
-
-	s.logger.Info("scheduler started", "jobs_count", len(s.jobs))
-
-	s.wg.Add(1)
-	go s.runLoop()
-
-	return nil
+	cs.wg.Wait()
+	cs.logger.Info("cron scheduler stopped")
 }
 
-// Stop gracefully stops the scheduler.
-// It waits for all currently running jobs to complete.
-func (s *Scheduler) Stop() error {
-	s.mu.Lock()
-	if !s.running {
-		s.mu.Unlock()
-		return ErrSchedulerNotRunning
-	}
-	s.running = false
-	s.cancel()
-	s.mu.Unlock()
+// run is the main scheduler loop.
+func (cs *CronScheduler) run(ctx context.Context) {
+	defer cs.wg.Done()
 
-	// Wait for the run loop and all jobs to finish
-	s.wg.Wait()
-
-	s.logger.Info("scheduler stopped",
-		"uptime", time.Since(s.startedAt).String(),
-	)
-
-	return nil
-}
-
-// IsRunning returns true if the scheduler is running.
-func (s *Scheduler) IsRunning() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.running
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// SCHEDULER LOOP
-// ══════════════════════════════════════════════════════════════════════════════
-
-// runLoop is the main scheduler loop that checks and runs due jobs.
-func (s *Scheduler) runLoop() {
-	defer s.wg.Done()
-
-	ticker := time.NewTicker(time.Second)
+	// Tick every minute at the start of each minute
+	ticker := time.NewTicker(cs.timeUntilNextMinute())
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-s.ctx.Done():
+		case <-ctx.Done():
+			cs.logger.Info("cron scheduler context cancelled")
 			return
+
+		case <-cs.stopCh:
+			return
+
 		case <-ticker.C:
-			s.checkAndRunJobs()
+			// Reset ticker to next minute
+			ticker.Reset(cs.timeUntilNextMinute())
+
+			// Check and run due jobs
+			cs.checkAndRunJobs(ctx)
 		}
 	}
 }
 
-// checkAndRunJobs checks all jobs and runs those that are due.
-func (s *Scheduler) checkAndRunJobs() {
-	now := time.Now().In(s.timezone)
+// timeUntilNextMinute returns the duration until the start of the next minute.
+func (cs *CronScheduler) timeUntilNextMinute() time.Duration {
+	now := time.Now().In(cs.location)
+	nextMinute := now.Truncate(time.Minute).Add(time.Minute)
+	return time.Until(nextMinute)
+}
 
-	s.mu.RLock()
-	jobsToRun := make([]*scheduledJob, 0)
-	for _, sj := range s.jobs {
-		if sj.enabled && !sj.nextRun.IsZero() && now.After(sj.nextRun) {
-			jobsToRun = append(jobsToRun, sj)
+// checkAndRunJobs checks for due jobs and runs them.
+func (cs *CronScheduler) checkAndRunJobs(ctx context.Context) {
+	now := time.Now().In(cs.location)
+
+	cs.mu.RLock()
+	var dueJobs []*CronJob
+	for _, job := range cs.jobs {
+		if job.Enabled && !job.NextRun.After(now) {
+			dueJobs = append(dueJobs, job)
 		}
 	}
-	s.mu.RUnlock()
+	cs.mu.RUnlock()
 
-	// Run due jobs
-	for _, sj := range jobsToRun {
-		s.wg.Add(1)
-		go s.runJob(sj)
+	for _, job := range dueJobs {
+		cs.runJob(ctx, job, now)
 	}
 }
 
-// runJob executes a single job and records the result.
-func (s *Scheduler) runJob(sj *scheduledJob) {
-	defer s.wg.Done()
+// runJob executes a single job.
+func (cs *CronScheduler) runJob(ctx context.Context, job *CronJob, now time.Time) {
+	cs.mu.Lock()
+	// Update job metadata before running
+	job.LastRun = now
+	job.NextRun = job.Expression.Next(now)
+	job.RunCount++
+	cs.mu.Unlock()
 
-	jobName := sj.job.Name()
-	startedAt := time.Now()
+	cs.logger.Info("running cron job",
+		"job", job.Name,
+		"run_count", job.RunCount,
+	)
 
-	// Call onJobStart hook
-	if s.onJobStart != nil {
-		s.onJobStart(jobName)
-	}
+	// Run job in a goroutine to not block other jobs
+	cs.wg.Add(1)
+	go func(j *CronJob) {
+		defer cs.wg.Done()
 
-	s.logger.Info("job started", "job", jobName)
+		startTime := time.Now()
+		err := j.Job.Execute(ctx)
+		duration := time.Since(startTime)
 
-	// Update next run time before executing
-	s.mu.Lock()
-	sj.lastRun = startedAt
-	sj.nextRun = sj.schedule.Next(startedAt.In(s.timezone))
-	sj.runCount++
-	s.mu.Unlock()
-
-	// Execute the job
-	err := sj.job.Run(s.ctx)
-	completedAt := time.Now()
-	duration := completedAt.Sub(startedAt)
-
-	// Build result
-	result := JobResult{
-		JobName:     jobName,
-		StartedAt:   startedAt,
-		CompletedAt: completedAt,
-		Duration:    duration,
-		Success:     err == nil,
-		Error:       err,
-		Metadata:    make(map[string]interface{}),
-	}
-
-	// Update metrics
-	if s.metrics != nil {
-		s.metrics.RecordExecution(jobName, duration, err == nil)
-	}
-
-	// Update state
-	s.mu.Lock()
-	if err != nil {
-		sj.failCount++
-	}
-	s.lastRuns[jobName] = &result
-	s.addToHistory(result)
-	s.mu.Unlock()
-
-	// Log result
-	if err != nil {
-		s.logger.Error("job failed",
-			"job", jobName,
-			"duration", duration.String(),
-			"error", err,
-		)
-
-		// Call onJobError hook
-		if s.onJobError != nil {
-			s.onJobError(jobName, err)
+		if err != nil {
+			cs.logger.Error("cron job failed",
+				"job", j.Name,
+				"duration", duration,
+				"error", err,
+			)
+		} else {
+			cs.logger.Info("cron job completed",
+				"job", j.Name,
+				"duration", duration,
+			)
 		}
-	} else {
-		s.logger.Info("job completed",
-			"job", jobName,
-			"duration", duration.String(),
-		)
-	}
-
-	// Call onJobComplete hook
-	if s.onJobComplete != nil {
-		s.onJobComplete(result)
-	}
+	}(job)
 }
 
-// addToHistory adds a result to the run history with size limit.
-func (s *Scheduler) addToHistory(result JobResult) {
-	s.runHistory = append(s.runHistory, result)
-
-	// Trim history if needed
-	maxSize := 1000
-	if len(s.runHistory) > maxSize {
-		s.runHistory = s.runHistory[len(s.runHistory)-maxSize:]
-	}
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// MANUAL EXECUTION
-// ══════════════════════════════════════════════════════════════════════════════
-
-// RunNow immediately executes a job by name, ignoring its schedule.
-func (s *Scheduler) RunNow(ctx context.Context, jobName string) (*JobResult, error) {
-	s.mu.RLock()
-	sj, exists := s.jobs[jobName]
-	s.mu.RUnlock()
-
-	if !exists {
-		return nil, fmt.Errorf("%w: %s", ErrJobNotFound, jobName)
-	}
-
-	startedAt := time.Now()
-	s.logger.Info("manual job execution started", "job", jobName)
-
-	err := sj.job.Run(ctx)
-	completedAt := time.Now()
-	duration := completedAt.Sub(startedAt)
-
-	result := &JobResult{
-		JobName:     jobName,
-		StartedAt:   startedAt,
-		CompletedAt: completedAt,
-		Duration:    duration,
-		Success:     err == nil,
-		Error:       err,
-		Metadata:    map[string]interface{}{"manual": true},
-	}
-
-	// Update metrics
-	if s.metrics != nil {
-		s.metrics.RecordExecution(jobName, duration, err == nil)
-	}
-
-	// Update state
-	s.mu.Lock()
-	s.lastRuns[jobName] = result
-	s.addToHistory(*result)
-	s.mu.Unlock()
-
-	if err != nil {
-		s.logger.Error("manual job execution failed",
-			"job", jobName,
-			"duration", duration.String(),
-			"error", err,
-		)
-	} else {
-		s.logger.Info("manual job execution completed",
-			"job", jobName,
-			"duration", duration.String(),
-		)
-	}
-
-	return result, err
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// STATUS & INFO
-// ══════════════════════════════════════════════════════════════════════════════
-
-// JobInfo contains information about a registered job.
-type JobInfo struct {
-	Name        string
-	Description string
-	Enabled     bool
-	Schedule    string
-	LastRun     time.Time
-	NextRun     time.Time
-	RunCount    int64
-	FailCount   int64
-	LastResult  *JobResult
-}
-
-// ListJobs returns information about all registered jobs.
-func (s *Scheduler) ListJobs() []JobInfo {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	infos := make([]JobInfo, 0, len(s.jobs))
-	for name, sj := range s.jobs {
-		info := JobInfo{
-			Name:        name,
-			Description: sj.job.Description(),
-			Enabled:     sj.enabled,
-			Schedule:    sj.schedule.String(),
-			LastRun:     sj.lastRun,
-			NextRun:     sj.nextRun,
-			RunCount:    sj.runCount,
-			FailCount:   sj.failCount,
-			LastResult:  s.lastRuns[name],
-		}
-		infos = append(infos, info)
-	}
-
-	return infos
-}
-
-// GetJobInfo returns information about a specific job.
-func (s *Scheduler) GetJobInfo(jobName string) (*JobInfo, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	sj, exists := s.jobs[jobName]
-	if !exists {
-		return nil, fmt.Errorf("%w: %s", ErrJobNotFound, jobName)
-	}
-
-	info := &JobInfo{
-		Name:        jobName,
-		Description: sj.job.Description(),
-		Enabled:     sj.enabled,
-		Schedule:    sj.schedule.String(),
-		LastRun:     sj.lastRun,
-		NextRun:     sj.nextRun,
-		RunCount:    sj.runCount,
-		FailCount:   sj.failCount,
-		LastResult:  s.lastRuns[jobName],
-	}
-
-	return info, nil
-}
-
-// GetHistory returns the recent job execution history.
-func (s *Scheduler) GetHistory(limit int) []JobResult {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if limit <= 0 || limit > len(s.runHistory) {
-		limit = len(s.runHistory)
-	}
-
-	// Return most recent results
-	start := len(s.runHistory) - limit
-	result := make([]JobResult, limit)
-	copy(result, s.runHistory[start:])
-
-	return result
-}
-
-// GetMetrics returns scheduler metrics.
-func (s *Scheduler) GetMetrics() *SchedulerMetrics {
-	return s.metrics
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// HOOKS
-// ══════════════════════════════════════════════════════════════════════════════
-
-// OnJobStart sets a callback to be called when a job starts.
-func (s *Scheduler) OnJobStart(fn func(jobName string)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onJobStart = fn
-}
-
-// OnJobComplete sets a callback to be called when a job completes.
-func (s *Scheduler) OnJobComplete(fn func(result JobResult)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onJobComplete = fn
-}
-
-// OnJobError sets a callback to be called when a job fails.
-func (s *Scheduler) OnJobError(fn func(jobName string, err error)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onJobError = fn
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// METRICS
-// ══════════════════════════════════════════════════════════════════════════════
-
-// SchedulerMetrics tracks scheduler performance metrics.
-type SchedulerMetrics struct {
-	mu sync.RWMutex
-
-	TotalExecutions int64
-	TotalSuccesses  int64
-	TotalFailures   int64
-	TotalDuration   time.Duration
-
-	ExecutionsByJob map[string]int64
-	FailuresByJob   map[string]int64
-	DurationsByJob  map[string]time.Duration
-	LastExecutions  map[string]time.Time
-}
-
-// NewSchedulerMetrics creates a new metrics tracker.
-func NewSchedulerMetrics() *SchedulerMetrics {
-	return &SchedulerMetrics{
-		ExecutionsByJob: make(map[string]int64),
-		FailuresByJob:   make(map[string]int64),
-		DurationsByJob:  make(map[string]time.Duration),
-		LastExecutions:  make(map[string]time.Time),
-	}
-}
-
-// RecordExecution records a job execution.
-func (m *SchedulerMetrics) RecordExecution(jobName string, duration time.Duration, success bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.TotalExecutions++
-	m.TotalDuration += duration
-	m.ExecutionsByJob[jobName]++
-	m.DurationsByJob[jobName] += duration
-	m.LastExecutions[jobName] = time.Now()
-
-	if success {
-		m.TotalSuccesses++
-	} else {
-		m.TotalFailures++
-		m.FailuresByJob[jobName]++
-	}
-}
-
-// Snapshot returns a point-in-time snapshot of metrics.
-func (m *SchedulerMetrics) Snapshot() MetricsSnapshot {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var avgDuration time.Duration
-	if m.TotalExecutions > 0 {
-		avgDuration = m.TotalDuration / time.Duration(m.TotalExecutions)
-	}
-
-	var successRate float64
-	if m.TotalExecutions > 0 {
-		successRate = float64(m.TotalSuccesses) / float64(m.TotalExecutions)
-	}
-
-	return MetricsSnapshot{
-		TotalExecutions: m.TotalExecutions,
-		TotalSuccesses:  m.TotalSuccesses,
-		TotalFailures:   m.TotalFailures,
-		SuccessRate:     successRate,
-		AverageDuration: avgDuration,
-	}
-}
-
-// MetricsSnapshot is a point-in-time snapshot of scheduler metrics.
-type MetricsSnapshot struct {
-	TotalExecutions int64
-	TotalSuccesses  int64
-	TotalFailures   int64
-	SuccessRate     float64
-	AverageDuration time.Duration
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// ERRORS
-// ══════════════════════════════════════════════════════════════════════════════
-
-var (
-	// ErrNilJob is returned when trying to register a nil job.
-	ErrNilJob = fmt.Errorf("job cannot be nil")
-
-	// ErrNilSchedule is returned when trying to register a job with nil schedule.
-	ErrNilSchedule = fmt.Errorf("schedule cannot be nil")
-
-	// ErrJobAlreadyExists is returned when a job with the same name already exists.
-	ErrJobAlreadyExists = fmt.Errorf("job already exists")
-
-	// ErrJobNotFound is returned when a job is not found.
-	ErrJobNotFound = fmt.Errorf("job not found")
-
-	// ErrSchedulerAlreadyRunning is returned when Start is called on a running scheduler.
-	ErrSchedulerAlreadyRunning = fmt.Errorf("scheduler is already running")
-
-	// ErrSchedulerNotRunning is returned when Stop is called on a stopped scheduler.
-	ErrSchedulerNotRunning = fmt.Errorf("scheduler is not running")
+// Common cron expression presets.
+const (
+	EveryMinute      = "* * * * *"
+	Every5Minutes    = "*/5 * * * *"
+	Every10Minutes   = "*/10 * * * *"
+	Every15Minutes   = "*/15 * * * *"
+	Every30Minutes   = "*/30 * * * *"
+	EveryHour        = "0 * * * *"
+	EveryDay9AM      = "0 9 * * *"
+	EveryDay21PM     = "0 21 * * *"
+	EveryDayMidnight = "0 0 * * *"
+	EverySunday      = "0 0 * * 0"
+	EveryMonday      = "0 0 * * 1"
+	FirstOfMonth     = "0 0 1 * *"
 )
+
+// MustParseCronExpression parses a cron expression or panics.
+// Use only for compile-time constants.
+func MustParseCronExpression(expr string) *CronExpression {
+	ce, err := ParseCronExpression(expr)
+	if err != nil {
+		panic(fmt.Sprintf("invalid cron expression %q: %v", expr, err))
+	}
+	return ce
+}
