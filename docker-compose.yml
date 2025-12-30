@@ -7,6 +7,9 @@ services:
       target: bot
     container_name: alem-hub-bot
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -26,6 +29,9 @@ services:
       target: worker
     container_name: alem-hub-worker
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
