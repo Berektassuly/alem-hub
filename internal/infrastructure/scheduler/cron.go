@@ -469,7 +469,7 @@ func (cs *CronScheduler) runJob(ctx context.Context, job *CronJob, now time.Time
 		defer cs.wg.Done()
 
 		startTime := time.Now()
-		err := j.Job.Execute(ctx)
+		err := j.Job.Run(ctx)
 		duration := time.Since(startTime)
 
 		if err != nil {

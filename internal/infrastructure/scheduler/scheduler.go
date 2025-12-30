@@ -28,6 +28,15 @@ type Job interface {
 	Description() string
 }
 
+// Schedule defines when a job should run.
+type Schedule interface {
+	// Next returns the next time the job should run after the given time.
+	Next(t time.Time) time.Time
+
+	// String returns a human-readable representation of the schedule.
+	String() string
+}
+
 // JobResult contains the result of a job execution.
 type JobResult struct {
 	JobName     string

@@ -2,49 +2,38 @@
 package handler
 
 import (
-	"alem-hub/internal/application/query"
-	"alem-hub/internal/domain/student"
-	"alem-hub/internal/interface/telegram/presenter"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"fmt"
-	"strings"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ME HANDLER
-// Handles /me command - shows the student's personal card with stats.
-// This is the "mirror" - where students see their progress and achievements.
-// Philosophy: Make progress visible and celebrate every step forward.
+// TOP HANDLER
+// Handles /top command - shows the leaderboard.
+// This shows the competitive aspect while enabling "From Competition to Collaboration".
+// Philosophy: The leaderboard is not just a ranking, but a "phonebook of helpers".
 // ══════════════════════════════════════════════════════════════════════════════
 
-// MeHandler handles the /me command for showing student card.
-type MeHandler struct {
-	studentRankQuery *query.GetStudentRankHandler
-	dailyProgress    *query.GetDailyProgressHandler
-	studentRepo      student.Repository
+// TopHandler handles the /top command for showing leaderboard.
+type TopHandler struct {
+	leaderboardQuery *query.GetLeaderboardHandler
 	keyboards        *presenter.KeyboardBuilder
-	cardPresenter    *presenter.StudentCardPresenter
 }
 
-// NewMeHandler creates a new MeHandler with dependencies.
-func NewMeHandler(
-	studentRankQuery *query.GetStudentRankHandler,
-	dailyProgress *query.GetDailyProgressHandler,
-	studentRepo student.Repository,
+// NewTopHandler creates a new TopHandler with dependencies.
+func NewTopHandler(
+	leaderboardQuery *query.GetLeaderboardHandler,
 	keyboards *presenter.KeyboardBuilder,
-	cardPresenter *presenter.StudentCardPresenter,
-) *MeHandler {
-	return &MeHandler{
-		studentRankQuery: studentRankQuery,
-		dailyProgress:    dailyProgress,
-		studentRepo:      studentRepo,
+) *TopHandler {
+	return &TopHandler{
+		leaderboardQuery: leaderboardQuery,
 		keyboards:        keyboards,
-		cardPresenter:    cardPresenter,
 	}
 }
 
-// MeRequest contains the parsed /me command data.
-type MeRequest struct {
+// TopRequest contains the parsed /top command data.
+type TopRequest struct {
 	// TelegramID is the user's Telegram ID.
 	TelegramID int64
 
@@ -54,12 +43,18 @@ type MeRequest struct {
 	// MessageID is the original message ID (for editing).
 	MessageID int
 
+	// Cohort is an optional cohort filter.
+	Cohort string
+
+	// Limit is the number of entries to show.
+	Limit int
+
 	// IsRefresh indicates if this is a refresh request (from callback).
 	IsRefresh bool
 }
 
-// MeResponse contains the response to send back.
-type MeResponse struct {
+// TopResponse contains the response to send back.
+type TopResponse struct {
 	// Text is the message text (HTML formatted).
 	Text string
 
@@ -73,196 +68,84 @@ type MeResponse struct {
 	IsError bool
 }
 
-// Handle processes the /me command.
-func (h *MeHandler) Handle(ctx context.Context, req MeRequest) (*MeResponse, error) {
-	// Get student by Telegram ID
-	stud, err := h.studentRepo.GetByTelegramID(ctx, student.TelegramID(req.TelegramID))
+// Handle processes the /top command.
+func (h *TopHandler) Handle(ctx context.Context, req TopRequest) (*TopResponse, error) {
+	// Set default limit
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+
+	// Get leaderboard
+	leaderboardQuery := query.GetLeaderboardQuery{
+		Cohort: req.Cohort,
+		Limit:  limit,
+		Offset: 0,
+	}
+
+	result, err := h.leaderboardQuery.Handle(ctx, leaderboardQuery)
 	if err != nil {
-		return h.handleNotRegistered()
+		return &TopResponse{
+			Text:      "❌ Не удалось загрузить рейтинг. Попробуйте позже.",
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
 	}
 
-	// Get rank information
-	rankQuery := query.GetStudentRankQuery{
-		TelegramID:     req.TelegramID,
-		IncludeHistory: false,
-	}
+	// Build response text
+	text := h.formatLeaderboard(result, req.Cohort)
 
-	rankResult, err := h.studentRankQuery.Handle(ctx, rankQuery)
-	if err != nil {
-		// Continue without rank info
-		rankResult = nil
-	}
-
-	// Get daily progress (optional)
-	var dailyResult *query.GetDailyProgressResult
-	if h.dailyProgress != nil {
-		progressQuery := query.GetDailyProgressQuery{
-			TelegramID: req.TelegramID,
-		}
-		dailyResult, _ = h.dailyProgress.Handle(ctx, progressQuery)
-	}
-
-	// Build the student card
-	text := h.buildStudentCard(stud, rankResult, dailyResult)
-	keyboard := h.keyboards.StudentCardKeyboard(stud.ID)
-
-	return &MeResponse{
+	return &TopResponse{
 		Text:      text,
-		Keyboard:  keyboard,
+		Keyboard:  h.keyboards.LeaderboardKeyboard(0, result.HasMore, req.Cohort, false),
 		ParseMode: "HTML",
-		IsError:   false,
 	}, nil
 }
 
-// handleNotRegistered handles the case when user is not registered.
-func (h *MeHandler) handleNotRegistered() (*MeResponse, error) {
-	text := "❌ <b>Ты ещё не зарегистрирован</b>\n\n" +
-		"Используй /start чтобы присоединиться к сообществу."
+// formatLeaderboard formats the leaderboard for display.
+func (h *TopHandler) formatLeaderboard(result *query.GetLeaderboardResult, cohort string) string {
+	var text string
 
-	return &MeResponse{
-		Text:      text,
-		ParseMode: "HTML",
-		IsError:   true,
-	}, nil
+	// Header
+	if cohort != "" {
+		text = fmt.Sprintf("🏆 <b>Рейтинг - %s</b>\n\n", cohort)
+	} else {
+		text = "🏆 <b>Общий рейтинг</b>\n\n"
+	}
+
+	// Entries
+	for _, entry := range result.Entries {
+		// Position emoji
+		posEmoji := h.getPositionEmoji(entry.Rank)
+
+		// Online indicator
+		onlineIndicator := ""
+		if entry.IsOnline {
+			onlineIndicator = " 🟢"
+		}
+
+		text += fmt.Sprintf("%s <b>%s</b>%s\n", posEmoji, entry.DisplayName, onlineIndicator)
+		text += fmt.Sprintf("   ⚡ %d XP • 🎮 Ур. %d\n", entry.XP, entry.Level)
+	}
+
+	// Footer with total count
+	if result.TotalCount > len(result.Entries) {
+		text += fmt.Sprintf("\n<i>Показано %d из %d студентов</i>", len(result.Entries), result.TotalCount)
+	}
+
+	return text
 }
 
-// buildStudentCard builds the student card text.
-func (h *MeHandler) buildStudentCard(
-	stud *student.Student,
-	rankResult *query.GetStudentRankResult,
-	dailyResult *query.GetDailyProgressResult,
-) string {
-	var sb strings.Builder
-
-	// Header with name and status
-	statusEmoji := getOnlineStatusEmoji(stud.OnlineState)
-	sb.WriteString(fmt.Sprintf("👤 <b>%s</b> %s\n", escapeHTML(stud.DisplayName), statusEmoji))
-	sb.WriteString(fmt.Sprintf("└ @%s\n\n", escapeHTML(string(stud.AlemLogin))))
-
-	// XP and Level section
-	sb.WriteString("📊 <b>Прогресс</b>\n")
-	sb.WriteString(fmt.Sprintf("├ XP: <code>%d</code>\n", stud.CurrentXP))
-	sb.WriteString(fmt.Sprintf("├ Уровень: <b>%d</b>\n", stud.Level()))
-
-	// Level progress bar
-	if rankResult != nil && rankResult.Student.XPToNextLevel > 0 {
-		progressBar := formatProgressBar(rankResult.Student.LevelProgress)
-		sb.WriteString(fmt.Sprintf("├ До уровня %d: %s %d XP\n", stud.Level()+1, progressBar, rankResult.Student.XPToNextLevel))
-	}
-
-	// Rank information
-	if rankResult != nil {
-		sb.WriteString(fmt.Sprintf("└ Позиция: <b>#%d</b>", rankResult.Student.Rank))
-
-		// Rank change indicator
-		if rankResult.Student.RankChange != 0 {
-			changeEmoji := "📈"
-			changeSign := "+"
-			if rankResult.Student.RankChange < 0 {
-				changeEmoji = "📉"
-				changeSign = ""
-			}
-			sb.WriteString(fmt.Sprintf(" %s %s%d", changeEmoji, changeSign, rankResult.Student.RankChange))
-		}
-
-		// Percentile
-		if rankResult.Student.TotalStudents > 0 {
-			percentile := query.FormatPercentile(rankResult.Student.Percentile)
-			sb.WriteString(fmt.Sprintf(" (%s)", percentile))
-		}
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\n")
-
-	// Daily Grind section (if available)
-	if dailyResult != nil && dailyResult.Progress != nil {
-		sb.WriteString("🔥 <b>Сегодня</b>\n")
-		sb.WriteString(fmt.Sprintf("├ XP: +%d\n", dailyResult.Progress.XPGained))
-		sb.WriteString(fmt.Sprintf("├ Задач: %d\n", dailyResult.Progress.TasksCompleted))
-
-		if dailyResult.Streak != nil && dailyResult.Streak.CurrentStreak > 0 {
-			streakEmoji := "🔥"
-			if dailyResult.Streak.CurrentStreak >= 7 {
-				streakEmoji = "🔥🔥"
-			}
-			if dailyResult.Streak.CurrentStreak >= 30 {
-				streakEmoji = "🔥🔥🔥"
-			}
-			sb.WriteString(fmt.Sprintf("└ Серия: %d дней %s\n", dailyResult.Streak.CurrentStreak, streakEmoji))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Neighbor info (who to catch up with)
-	if rankResult != nil && rankResult.Student.XPToNextRank > 0 && rankResult.Student.NextRankStudent != "" {
-		sb.WriteString("🎯 <b>Цель</b>\n")
-		sb.WriteString(fmt.Sprintf("└ До @%s: %d XP\n\n",
-			escapeHTML(rankResult.Student.NextRankStudent),
-			rankResult.Student.XPToNextRank))
-	}
-
-	// Helper rating (if they've helped others)
-	if stud.HelpCount > 0 {
-		sb.WriteString("🤝 <b>Помощник</b>\n")
-		sb.WriteString(fmt.Sprintf("├ Рейтинг: %s (%.1f)\n", formatStarRating(stud.HelpRating), stud.HelpRating))
-		sb.WriteString(fmt.Sprintf("└ Помощей: %d\n\n", stud.HelpCount))
-	}
-
-	// Motivational message
-	if rankResult != nil && rankResult.Message != "" {
-		sb.WriteString(fmt.Sprintf("<i>%s</i>\n", rankResult.Message))
-	}
-
-	// Cohort
-	sb.WriteString(fmt.Sprintf("\n🏫 Когорта: %s", string(stud.Cohort)))
-
-	return sb.String()
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
-// ══════════════════════════════════════════════════════════════════════════════
-
-// getOnlineStatusEmoji returns emoji for online status.
-func getOnlineStatusEmoji(state student.OnlineState) string {
-	switch state {
-	case student.OnlineStateOnline:
-		return "🟢"
-	case student.OnlineStateAway:
-		return "🟡"
+// getPositionEmoji returns an emoji for the position.
+func (h *TopHandler) getPositionEmoji(position int) string {
+	switch position {
+	case 1:
+		return "🥇"
+	case 2:
+		return "🥈"
+	case 3:
+		return "🥉"
 	default:
-		return "⚪"
+		return fmt.Sprintf("%d.", position)
 	}
-}
-
-// formatProgressBar formats a progress bar.
-func formatProgressBar(progress float64) string {
-	const barLength = 10
-	filled := int(progress * barLength)
-	if filled > barLength {
-		filled = barLength
-	}
-	if filled < 0 {
-		filled = 0
-	}
-
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", barLength-filled)
-	return fmt.Sprintf("[%s]", bar)
-}
-
-// formatStarRating formats rating as stars.
-func formatStarRating(rating float64) string {
-	if rating == 0 {
-		return "☆☆☆☆☆"
-	}
-
-	fullStars := int(rating)
-	hasHalf := (rating - float64(fullStars)) >= 0.5
-
-	result := strings.Repeat("⭐", fullStars)
-	if hasHalf && fullStars < 5 {
-		result += "✨"
-	}
-
-	return result
 }

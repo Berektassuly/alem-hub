@@ -2,10 +2,10 @@
 package query
 
 import (
-	"alem-hub/internal/domain/activity"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"sort"
@@ -475,7 +475,7 @@ func (h *FindHelpersHandler) checkPriorContact(ctx context.Context, helperID, re
 		return false, 0
 	}
 
-	return true, conn.InteractionCount
+	return true, conn.Stats.InteractionCount
 }
 
 // calculateScore вычисляет скор помощника для ранжирования.

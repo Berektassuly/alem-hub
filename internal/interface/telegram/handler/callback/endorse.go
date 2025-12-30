@@ -2,10 +2,10 @@
 package callback
 
 import (
-	"alem-hub/internal/application/command"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
-	"alem-hub/internal/interface/telegram/presenter"
+	"github.com/alem-hub/alem-community-hub/internal/application/command"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"fmt"
 	"strings"

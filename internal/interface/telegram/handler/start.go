@@ -3,9 +3,9 @@
 package handler
 
 import (
-	"alem-hub/internal/application/saga"
-	"alem-hub/internal/domain/student"
-	"alem-hub/internal/interface/telegram/presenter"
+	"github.com/alem-hub/alem-community-hub/internal/application/saga"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"errors"
 	"fmt"

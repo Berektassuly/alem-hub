@@ -4,8 +4,8 @@
 package command
 
 import (
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
@@ -333,10 +333,12 @@ func (h *SyncStudentHandler) syncStudentData(
 				result.RankChanged = true
 
 				// Emit RankChanged event
+				cohort := string(existingStudent.Cohort)
 				rankEvent := shared.NewRankChangedEvent(
 					existingStudent.ID,
 					oldRank,
 					newRank,
+					cohort,
 				)
 				if correlationID != "" {
 					rankEvent.BaseEvent = rankEvent.BaseEvent.WithCorrelationID(correlationID)
@@ -345,11 +347,11 @@ func (h *SyncStudentHandler) syncStudentData(
 
 				// Check for top N entry
 				if newRank <= 50 && oldRank > 50 {
-					topEvent := shared.NewEnteredTopNEvent(existingStudent.ID, 50, newRank)
+					topEvent := shared.NewEnteredTopNEvent(existingStudent.ID, 50, newRank, cohort)
 					result.Events = append(result.Events, topEvent)
 				}
 				if newRank <= 10 && oldRank > 10 {
-					topEvent := shared.NewEnteredTopNEvent(existingStudent.ID, 10, newRank)
+					topEvent := shared.NewEnteredTopNEvent(existingStudent.ID, 10, newRank, cohort)
 					result.Events = append(result.Events, topEvent)
 				}
 			}

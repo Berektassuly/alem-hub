@@ -2,11 +2,11 @@
 package eventhandler
 
 import (
-	"alem-hub/internal/domain/activity"
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
@@ -202,12 +202,13 @@ func (h *OnStudentStuckHandler) createHelpRequest(
 		return nil, nil
 	}
 
-	helpRequest, err := social.NewHelpRequest(
-		generateID(),
-		social.StudentID(event.StudentID),
-		social.TaskID(event.TaskID),
-		event.Message,
-	)
+	helpRequest, err := social.NewHelpRequest(social.NewHelpRequestParams{
+		ID:          generateID(),
+		RequesterID: social.StudentID(event.StudentID),
+		TaskID:      social.TaskID(event.TaskID),
+		TaskName:    event.TaskID, // Using task ID as name
+		Description: event.Message,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create help request: %w", err)
 	}
@@ -430,14 +431,15 @@ func (h *OnStudentStuckHandler) notifyStudentWithHelpers(
 		message = sb.String()
 	}
 
-	notif, err := notification.NewNotification(
-		notification.NotificationID(generateID()),
-		notification.NotificationTypeHelpOffer,
-		notification.RecipientID(requestingStudent.ID),
-		notification.TelegramChatID(requestingStudent.TelegramID),
-		message,
-		notification.PriorityNormal,
-	)
+	priority := notification.PriorityNormal
+	notif, err := notification.NewNotification(notification.NewNotificationParams{
+		ID:             notification.NotificationID(generateID()),
+		Type:           notification.NotificationTypeHelpOffer,
+		RecipientID:    notification.RecipientID(requestingStudent.ID),
+		TelegramChatID: notification.TelegramChatID(requestingStudent.TelegramID),
+		Message:        message,
+		Priority:       &priority,
+	})
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}
@@ -516,14 +518,15 @@ func (h *OnStudentStuckHandler) notifyPotentialHelpers(
 			message += fmt.Sprintf("\n\n💬 \"%s\"", msg)
 		}
 
-		notif, err := notification.NewNotification(
-			notification.NotificationID(generateID()),
-			notification.NotificationTypeHelpRequest,
-			notification.RecipientID(helper.StudentID),
-			notification.TelegramChatID(helper.Student.TelegramID),
-			message,
-			notification.PriorityNormal,
-		)
+		helperPriority := notification.PriorityNormal
+		notif, err := notification.NewNotification(notification.NewNotificationParams{
+			ID:             notification.NotificationID(generateID()),
+			Type:           notification.NotificationTypeHelpRequest,
+			RecipientID:    notification.RecipientID(helper.StudentID),
+			TelegramChatID: notification.TelegramChatID(helper.Student.TelegramID),
+			Message:        message,
+			Priority:       &helperPriority,
+		})
 		if err != nil {
 			h.logger.Warn("failed to create helper notification",
 				"helper_id", helper.StudentID,

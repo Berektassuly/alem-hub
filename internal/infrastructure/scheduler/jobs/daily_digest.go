@@ -2,10 +2,10 @@
 package jobs
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
@@ -401,8 +401,8 @@ func (j *DailyDigestJob) sendDigestToStudent(
 	// Create notification
 	n := &notification.Notification{
 		RecipientID:    notification.RecipientID(s.ID),
-		TelegramChatID: int64(s.TelegramID),
-		Type:           notification.TypeDailyDigest,
+		TelegramChatID: notification.TelegramChatID(s.TelegramID),
+		Type:           notification.NotificationTypeDailyDigest,
 		Priority:       notification.PriorityLow,
 		Status:         notification.StatusPending,
 		Message:        message,
@@ -435,7 +435,7 @@ func (j *DailyDigestJob) buildDigestContent(
 	today := time.Now().In(j.config.Timezone).Truncate(24 * time.Hour)
 	dailyGrind, err := j.progressRepo.GetDailyGrind(ctx, s.ID, today)
 	if err == nil && dailyGrind != nil {
-		content.TodayXP = dailyGrind.XPGained
+		content.TodayXP = int(dailyGrind.XPGained)
 		content.TasksCompleted = dailyGrind.TasksCompleted
 	}
 

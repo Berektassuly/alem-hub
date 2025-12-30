@@ -4,8 +4,8 @@
 package presenter
 
 import (
-	"alem-hub/internal/application/query"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"fmt"
 	"strings"
 	"time"

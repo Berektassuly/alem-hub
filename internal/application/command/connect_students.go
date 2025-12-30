@@ -2,9 +2,9 @@
 package command
 
 import (
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
@@ -176,11 +176,9 @@ func (h *ConnectStudentsHandler) handleExistingConnection(
 		result.PreviousType = existing.Type
 		result.WasUpgraded = true
 
-		// Upgrade the connection
-		if err := existing.UpgradeTo(cmd.Type); err != nil {
-			// If upgrade fails, just return existing
-			return result, nil
-		}
+		// Upgrade the connection by updating its type
+		existing.Type = cmd.Type
+		existing.UpdatedAt = time.Now().UTC()
 
 		if err := h.socialRepo.Connections().Update(ctx, existing); err != nil {
 			return nil, fmt.Errorf("connect_students: failed to upgrade connection: %w", err)
@@ -191,7 +189,7 @@ func (h *ConnectStudentsHandler) handleExistingConnection(
 
 	// If connection is pending and initiator is target of pending request, accept it
 	if existing.Status == social.ConnectionStatusPending &&
-		string(existing.TargetID) == cmd.InitiatorID {
+		string(existing.ReceiverID) == cmd.InitiatorID {
 		if err := existing.Accept(); err == nil {
 			_ = h.socialRepo.Connections().Update(ctx, existing)
 			result.Status = social.ConnectionStatusActive
@@ -224,18 +222,20 @@ func (h *ConnectStudentsHandler) createNewConnection(
 ) (*ConnectStudentsResult, error) {
 	connectionID := generateConnectionID(cmd.InitiatorID, cmd.TargetID)
 
+	// Build connection context from command data
+	connContext := social.ConnectionContext{
+		Note: cmd.Message,
+	}
+	if cmd.TaskID != "" {
+		connContext.TaskID = social.TaskID(cmd.TaskID)
+	}
+
 	params := social.NewConnectionParams{
 		ID:          connectionID,
 		InitiatorID: social.StudentID(cmd.InitiatorID),
-		TargetID:    social.StudentID(cmd.TargetID),
+		ReceiverID:  social.StudentID(cmd.TargetID),
 		Type:        cmd.Type,
-		Context:     cmd.Context,
-		Message:     cmd.Message,
-	}
-
-	if cmd.TaskID != "" {
-		taskID := social.TaskID(cmd.TaskID)
-		params.TaskID = &taskID
+		Context:     connContext,
 	}
 
 	connection, err := social.NewConnection(params)
@@ -361,7 +361,7 @@ func (h *AcceptConnectionHandler) Handle(
 	}
 
 	// Verify accepter is the target
-	if string(conn.TargetID) != cmd.AccepterID {
+	if string(conn.ReceiverID) != cmd.AccepterID {
 		return nil, errors.New("accept_connection: only the target can accept")
 	}
 
@@ -384,11 +384,11 @@ func (h *AcceptConnectionHandler) Handle(
 	// Emit event
 	event := shared.NewConnectionMadeEvent(
 		string(conn.InitiatorID),
-		string(conn.TargetID),
+		string(conn.ReceiverID),
 		string(conn.Type),
 	)
-	if conn.TaskID != nil {
-		event.TaskID = string(*conn.TaskID)
+	if conn.Context.TaskID != "" {
+		event.TaskID = string(conn.Context.TaskID)
 	}
 	if cmd.CorrelationID != "" {
 		event.BaseEvent = event.BaseEvent.WithCorrelationID(cmd.CorrelationID)

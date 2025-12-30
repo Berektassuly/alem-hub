@@ -2,9 +2,9 @@
 package handler
 
 import (
-	"alem-hub/internal/application/query"
-	"alem-hub/internal/domain/student"
-	"alem-hub/internal/interface/telegram/presenter"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"fmt"
 	"strings"
@@ -175,10 +175,10 @@ func (h *MeHandler) buildStudentCard(
 	sb.WriteString("\n")
 
 	// Daily Grind section (if available)
-	if dailyResult != nil && dailyResult.Progress != nil {
+	if dailyResult != nil && dailyResult.Today.XPGained > 0 {
 		sb.WriteString("🔥 <b>Сегодня</b>\n")
-		sb.WriteString(fmt.Sprintf("├ XP: +%d\n", dailyResult.Progress.XPGained))
-		sb.WriteString(fmt.Sprintf("├ Задач: %d\n", dailyResult.Progress.TasksCompleted))
+		sb.WriteString(fmt.Sprintf("├ XP: +%d\n", dailyResult.Today.XPGained))
+		sb.WriteString(fmt.Sprintf("├ Задач: %d\n", dailyResult.Today.TasksCompleted))
 
 		if dailyResult.Streak != nil && dailyResult.Streak.CurrentStreak > 0 {
 			streakEmoji := "🔥"

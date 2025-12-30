@@ -4,7 +4,7 @@
 package presenter
 
 import (
-	"alem-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
 	"fmt"
 	"strings"
 	"time"

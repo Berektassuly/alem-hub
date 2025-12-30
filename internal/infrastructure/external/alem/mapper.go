@@ -2,9 +2,9 @@
 package alem
 
 import (
-	"alem-hub/internal/domain/activity"
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"time"
 )
 
@@ -247,46 +247,49 @@ func (m *Mapper) TaskCompletionsFromDTOs(dtos []TaskCompletionDTO) ([]*activity.
 // ══════════════════════════════════════════════════════════════════════════════
 
 // LeaderboardEntryFromDTO converts a LeaderboardEntryDTO to domain LeaderboardEntry.
-func (m *Mapper) LeaderboardEntryFromDTO(dto *LeaderboardEntryDTO) leaderboard.Entry {
+// The cohort parameter is passed from the parent LeaderboardDTO.
+func (m *Mapper) LeaderboardEntryFromDTO(dto *LeaderboardEntryDTO, cohort string) *leaderboard.LeaderboardEntry {
 	displayName := dto.DisplayName
 	if displayName == "" {
 		displayName = dto.Login
 	}
 
-	onlineState := student.OnlineStateOffline
-	if dto.IsOnline {
-		onlineState = student.OnlineStateOnline
+	cohortVal := leaderboard.Cohort(cohort)
+	if cohortVal == "" {
+		cohortVal = leaderboard.CohortAll
 	}
 
-	return leaderboard.Entry{
-		Rank:        dto.Rank,
-		StudentID:   dto.StudentID,
-		Login:       dto.Login,
-		DisplayName: displayName,
-		XP:          dto.XP,
-		Level:       dto.Level,
-		RankChange:  dto.Change,
-		OnlineState: onlineState,
+	entry, _ := leaderboard.NewLeaderboardEntry(
+		leaderboard.Rank(dto.Rank),
+		dto.StudentID,
+		dto.Login,
+		displayName,
+		leaderboard.XP(dto.XP),
+		dto.Level,
+		cohortVal,
+	)
+	if entry != nil {
+		entry.RankChange = leaderboard.RankChange(dto.Change)
+		entry.IsOnline = dto.IsOnline
 	}
+	return entry
 }
 
-// LeaderboardFromDTO converts a LeaderboardDTO to domain Leaderboard.
-func (m *Mapper) LeaderboardFromDTO(dto *LeaderboardDTO) *leaderboard.Leaderboard {
+// LeaderboardRankingFromDTO converts a LeaderboardDTO to domain Ranking.
+func (m *Mapper) LeaderboardRankingFromDTO(dto *LeaderboardDTO) *leaderboard.Ranking {
 	if dto == nil {
 		return nil
 	}
 
-	entries := make([]leaderboard.Entry, len(dto.Entries))
+	ranking := leaderboard.NewRanking()
 	for i := range dto.Entries {
-		entries[i] = m.LeaderboardEntryFromDTO(&dto.Entries[i])
+		entry := m.LeaderboardEntryFromDTO(&dto.Entries[i], dto.Cohort)
+		if entry != nil {
+			_ = ranking.Add(entry)
+		}
 	}
 
-	return &leaderboard.Leaderboard{
-		Entries:   entries,
-		Cohort:    dto.Cohort,
-		Total:     dto.Total,
-		UpdatedAt: dto.UpdatedAt,
-	}
+	return ranking
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

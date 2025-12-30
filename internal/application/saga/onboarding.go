@@ -4,10 +4,10 @@
 package saga
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
@@ -417,6 +417,7 @@ func (s *OnboardingSaga) stepInitializeProgress(ctx context.Context, state *Onbo
 
 // stepSendWelcome sends a welcome notification to the new student.
 func (s *OnboardingSaga) stepSendWelcome(ctx context.Context, state *OnboardingState) (string, error) {
+	welcomePriority := notification.PriorityHigh
 	welcomeNotification, err := notification.NewNotification(notification.NewNotificationParams{
 		ID:             notification.NotificationID(s.idGenerator.GenerateID()),
 		Type:           notification.NotificationTypeWelcome,
@@ -424,7 +425,7 @@ func (s *OnboardingSaga) stepSendWelcome(ctx context.Context, state *OnboardingS
 		TelegramChatID: notification.TelegramChatID(state.Input.TelegramID),
 		Title:          "👋 Добро пожаловать в Alem Community Hub!",
 		Message:        s.buildWelcomeMessage(state),
-		Priority:       notification.PriorityHigh,
+		Priority:       &welcomePriority,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create welcome notification: %w", err)

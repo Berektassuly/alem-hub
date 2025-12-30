@@ -4,8 +4,8 @@
 package middleware
 
 import (
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"sync"

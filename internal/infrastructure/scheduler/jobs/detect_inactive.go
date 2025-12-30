@@ -2,10 +2,10 @@
 package jobs
 
 import (
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
@@ -30,7 +30,7 @@ import (
 type DetectInactiveJob struct {
 	// Dependencies
 	studentRepo      student.Repository
-	socialRepo       social.SocialRepository
+	socialRepo       social.Repository
 	notificationSvc  notification.NotificationService
 	notificationRepo notification.NotificationRepository
 	eventPublisher   shared.EventPublisher
@@ -142,7 +142,7 @@ type InactiveStudentInfo struct {
 // NewDetectInactiveJob creates a new detect inactive job.
 func NewDetectInactiveJob(
 	studentRepo student.Repository,
-	socialRepo social.SocialRepository,
+	socialRepo social.Repository,
 	notificationSvc notification.NotificationService,
 	notificationRepo notification.NotificationRepository,
 	eventPublisher shared.EventPublisher,
@@ -360,7 +360,7 @@ func (j *DetectInactiveJob) sendGentleReminder(
 	}
 
 	// Create and send notification
-	n := j.createInactivityNotification(info, notification.TypeInactivityReminder)
+	n := j.createInactivityNotification(info, notification.NotificationTypeInactivityReminder)
 	n.Message = fmt.Sprintf(
 		"Привет, %s! 👋\n\n"+
 			"Мы заметили, что тебя не было %d дней. "+
@@ -408,7 +408,7 @@ func (j *DetectInactiveJob) sendEncouragement(
 	}
 
 	// Create encouraging notification with progress info
-	n := j.createInactivityNotification(info, notification.TypeInactivityReminder)
+	n := j.createInactivityNotification(info, notification.NotificationTypeInactivityReminder)
 	n.Message = fmt.Sprintf(
 		"Привет, %s! 🌟\n\n"+
 			"Прошло уже %d дней с твоего последнего визита. "+
@@ -456,8 +456,8 @@ func (j *DetectInactiveJob) notifyStudyBuddies(
 		// Create notification for study buddy
 		n := &notification.Notification{
 			RecipientID:    notification.RecipientID(buddy.ID),
-			TelegramChatID: int64(buddy.TelegramID),
-			Type:           notification.TypeInactivityReminder,
+			TelegramChatID: notification.TelegramChatID(buddy.TelegramID),
+			Type:           notification.NotificationTypeInactivityReminder,
 			Priority:       notification.PriorityNormal,
 			Status:         notification.StatusPending,
 			Message: fmt.Sprintf(
@@ -495,7 +495,7 @@ func (j *DetectInactiveJob) urgentOutreach(
 ) error {
 	// Notify the student with urgency
 	if j.config.EnableNotifications && !info.AlreadyNotified {
-		n := j.createInactivityNotification(info, notification.TypeInactivityReminder)
+		n := j.createInactivityNotification(info, notification.NotificationTypeInactivityReminder)
 		n.Priority = notification.PriorityHigh
 		n.Message = fmt.Sprintf(
 			"Привет, %s! ❤️\n\n"+
@@ -522,8 +522,8 @@ func (j *DetectInactiveJob) urgentOutreach(
 
 		n := &notification.Notification{
 			RecipientID:    notification.RecipientID(buddy.ID),
-			TelegramChatID: int64(buddy.TelegramID),
-			Type:           notification.TypeInactivityReminder,
+			TelegramChatID: notification.TelegramChatID(buddy.TelegramID),
+			Type:           notification.NotificationTypeInactivityReminder,
 			Priority:       notification.PriorityHigh,
 			Status:         notification.StatusPending,
 			Message: fmt.Sprintf(
@@ -576,7 +576,7 @@ func (j *DetectInactiveJob) markStudentInactive(
 
 	// Send final notification
 	if j.config.EnableNotifications {
-		n := j.createInactivityNotification(info, notification.TypeInactivityReminder)
+		n := j.createInactivityNotification(info, notification.NotificationTypeInactivityReminder)
 		n.Message = fmt.Sprintf(
 			"Привет, %s 🙁\n\n"+
 				"К сожалению, мы вынуждены отметить тебя как неактивного "+
@@ -602,15 +602,13 @@ func (j *DetectInactiveJob) createInactivityNotification(
 ) *notification.Notification {
 	return &notification.Notification{
 		RecipientID:    notification.RecipientID(info.Student.ID),
-		TelegramChatID: int64(info.Student.TelegramID),
+		TelegramChatID: notification.TelegramChatID(info.Student.TelegramID),
 		Type:           notifType,
 		Priority:       notification.PriorityNormal,
 		Status:         notification.StatusPending,
 		CreatedAt:      time.Now(),
 		Data: notification.NotificationData{
-			"student_id":    info.Student.ID,
-			"days_inactive": info.DaysInactive,
-			"action":        string(info.RecommendedAction),
+			DaysInactive: info.DaysInactive,
 		},
 	}
 }
@@ -647,7 +645,7 @@ func (j *DetectInactiveJob) checkNotificationCooldown(ctx context.Context, stude
 }
 
 func (j *DetectInactiveJob) getStudyBuddies(ctx context.Context, studentID string) ([]string, error) {
-	connections, err := j.socialRepo.GetConnections(ctx, studentID)
+	connections, err := j.socialRepo.Connections().GetActiveByStudentID(ctx, social.StudentID(studentID))
 	if err != nil {
 		return nil, err
 	}
@@ -655,10 +653,10 @@ func (j *DetectInactiveJob) getStudyBuddies(ctx context.Context, studentID strin
 	buddyIDs := make([]string, 0, len(connections))
 	for _, conn := range connections {
 		// Get the other party in the connection
-		if conn.StudentAID == studentID {
-			buddyIDs = append(buddyIDs, conn.StudentBID)
+		if string(conn.InitiatorID) == studentID {
+			buddyIDs = append(buddyIDs, string(conn.ReceiverID))
 		} else {
-			buddyIDs = append(buddyIDs, conn.StudentAID)
+			buddyIDs = append(buddyIDs, string(conn.InitiatorID))
 		}
 	}
 

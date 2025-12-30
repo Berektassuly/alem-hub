@@ -2,7 +2,7 @@
 package command
 
 import (
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"

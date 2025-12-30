@@ -2,9 +2,9 @@
 package projections
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"sort"
