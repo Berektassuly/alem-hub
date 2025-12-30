@@ -220,7 +220,6 @@ func run(ctx context.Context) error {
 	studentRepo := postgres.NewStudentRepository(dbConn)
 	progressRepo := postgres.NewProgressRepository(dbConn)
 	leaderboardRepo := postgres.NewLeaderboardRepository(dbConn)
-	_ = progressRepo // TODO: Used when SyncStudentHandler is properly initialized
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 7. ИНИЦИАЛИЗАЦИЯ EVENT BUS
@@ -271,19 +270,19 @@ func run(ctx context.Context) error {
 	_ = updatePrefsCmd
 	_ = leaderboardService
 
-	// TODO: Queries require infrastructure implementations that are not yet complete.
-	var leaderboardQuery *query.GetLeaderboardHandler = nil
-	var studentRankQuery *query.GetStudentRankHandler = nil
-	var neighborsQuery *query.GetNeighborsHandler = nil
+	// Initialize query handlers with available repositories
+	// Cache and tracker can be nil - handlers handle that gracefully
+	// Note: leaderboardCache doesn't fully implement domain interface yet, using nil
+	leaderboardQuery := query.NewGetLeaderboardHandler(leaderboardRepo, nil, nil)
+	studentRankQuery := query.NewGetStudentRankHandler(studentRepo, leaderboardRepo, nil, nil)
+	neighborsQuery := query.NewGetNeighborsHandler(studentRepo, leaderboardRepo, nil)
+	dailyProgressQuery := query.NewGetDailyProgressHandler(studentRepo, progressRepo, leaderboardRepo)
+
+	// TODO: These handlers require activity.Repository which is not yet implemented
 	var findHelpersQuery *query.FindHelpersHandler = nil
 	var onlineNowQuery *query.GetOnlineNowHandler = nil
-	var dailyProgressQuery *query.GetDailyProgressHandler = nil
-	_ = leaderboardQuery
-	_ = studentRankQuery
-	_ = neighborsQuery
 	_ = findHelpersQuery
 	_ = onlineNowQuery
-	_ = dailyProgressQuery
 
 	// TODO: Saga requires many dependencies that are not yet implemented
 	var onboardingSaga *saga.OnboardingSaga = nil
