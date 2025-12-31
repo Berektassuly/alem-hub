@@ -7,6 +7,11 @@ services:
       target: bot
     container_name: alem-hub-bot
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -26,6 +31,11 @@ services:
       target: worker
     container_name: alem-hub-worker
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -51,6 +61,9 @@ services:
 networks:
   alem-network:
     driver: bridge
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "true"
 
 volumes:
   redis-data:
