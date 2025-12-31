@@ -51,7 +51,7 @@ func DefaultClientConfig(token string) ClientConfig {
 	return ClientConfig{
 		Token:         token,
 		BaseURL:       "https://api.telegram.org",
-		Timeout:       30 * time.Second,
+		Timeout:       60 * time.Second, // Must be > polling timeout (30s) + network latency
 		RetryAttempts: 3,
 		RetryDelay:    1 * time.Second,
 	}
