@@ -61,6 +61,7 @@ func DefaultAuthConfig() AuthConfig {
 		PublicCommands: map[string]bool{
 			"/start": true,
 			"start":  true,
+			"":       true, // Text messages during onboarding
 		},
 		CacheTTL: 5 * time.Minute,
 		OnUnauthorized: func(telegramID int64) string {
