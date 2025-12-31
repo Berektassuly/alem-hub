@@ -588,6 +588,27 @@ func (a *alemClientAdapter) ValidateLogin(ctx context.Context, login string) (bo
 	return dto != nil, nil
 }
 
+// Authenticate implements saga.AlemAPIClient.
+func (a *alemClientAdapter) Authenticate(ctx context.Context, email, password string) (*saga.AlemStudentData, error) {
+	result, err := a.client.Authenticate(ctx, email, password)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.Student == nil {
+		return nil, fmt.Errorf("authentication returned no student data")
+	}
+
+	dto := result.Student
+	return &saga.AlemStudentData{
+		Login:       dto.Login,
+		DisplayName: dto.FullName(),
+		XP:          dto.XP,
+		Level:       dto.Level,
+		Cohort:      dto.Cohort,
+		JoinedAt:    dto.CreatedAt,
+	}, nil
+}
+
 // uuidGenerator implements saga.IDGenerator using Google UUID.
 type uuidGenerator struct{}
 

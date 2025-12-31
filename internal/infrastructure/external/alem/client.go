@@ -97,6 +97,60 @@ func NewClient(config ClientConfig) *Client {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION OPERATIONS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// AuthRequest contains credentials for authentication.
+type AuthRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// AuthResult contains the result of authentication.
+type AuthResult struct {
+	Token   *TokenDTO
+	Student *StudentDTO
+}
+
+// Authenticate authenticates a user with email/username and password.
+// Returns the token and student data on success.
+func (c *Client) Authenticate(ctx context.Context, email, password string) (*AuthResult, error) {
+	req := AuthRequest{
+		Email:    email,
+		Password: password,
+	}
+
+	var response APIResponse[struct {
+		Token   TokenDTO   `json:"token"`
+		Student StudentDTO `json:"student"`
+	}]
+
+	if err := c.doSingleRequest(ctx, http.MethodPost, "/auth/sign-in", req, &response); err != nil {
+		return nil, fmt.Errorf("authenticate: %w", err)
+	}
+
+	if !response.Success {
+		return nil, fmt.Errorf("authentication failed: %s", response.Error)
+	}
+
+	// Calculate expiration time
+	token := response.Data.Token
+	if token.ExpiresIn > 0 {
+		token.ExpiresAt = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	}
+
+	// Store token for subsequent requests
+	c.tokenMu.Lock()
+	c.token = &token
+	c.tokenMu.Unlock()
+
+	return &AuthResult{
+		Token:   &token,
+		Student: &response.Data.Student,
+	}, nil
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // STUDENT OPERATIONS
 // ══════════════════════════════════════════════════════════════════════════════
 

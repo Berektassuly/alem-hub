@@ -11,7 +11,36 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING STATE
+// Tracks the two-step onboarding flow: email → password
+// ══════════════════════════════════════════════════════════════════════════════
+
+// OnboardingStep represents the current step in onboarding.
+type OnboardingStep int
+
+const (
+	StepWaitingForEmail OnboardingStep = iota
+	StepWaitingForPassword
+)
+
+// PendingOnboarding represents an in-progress onboarding session.
+type PendingOnboarding struct {
+	Email     string
+	Step      OnboardingStep
+	CreatedAt time.Time
+}
+
+// pendingOnboardings stores in-progress onboarding sessions.
+// Key is TelegramID.
+var pendingOnboardings = struct {
+	sync.RWMutex
+	data map[int64]*PendingOnboarding
+}{data: make(map[int64]*PendingOnboarding)}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // START HANDLER
@@ -135,6 +164,14 @@ func (h *StartHandler) handleAskForLogin(ctx context.Context, req StartRequest) 
 		greeting = req.FirstName
 	}
 
+	// Start new onboarding session - waiting for email
+	pendingOnboardings.Lock()
+	pendingOnboardings.data[req.TelegramID] = &PendingOnboarding{
+		Step:      StepWaitingForEmail,
+		CreatedAt: time.Now(),
+	}
+	pendingOnboardings.Unlock()
+
 	text := fmt.Sprintf(
 		"Привет, %s! 👋\n\n"+
 			"Добро пожаловать в <b>Alem Community Hub</b> — неофициальное сообщество студентов Alem School.\n\n"+
@@ -142,10 +179,8 @@ func (h *StartHandler) handleAskForLogin(ctx context.Context, req StartRequest) 
 			"Это место, где лидерборд — не про соревнование, а про взаимопомощь. "+
 			"Здесь ты можешь найти тех, кто решил задачу, на которой ты застрял, "+
 			"и помочь другим в ответ.\n\n"+
-			"📝 <b>Для регистрации отправь свой логин Alem:</b>\n"+
-			"Просто напиши его в чат (например: <code>ivanov_i</code>)\n\n"+
-			"<i>Или используй ссылку:</i>\n"+
-			"<code>https://t.me/AlemHubBot?start=твой_логин</code>",
+			"📝 <b>Для регистрации введи email от alem.school:</b>\n"+
+			"Просто напиши его в чат (например: <code>student@alem.school</code>)",
 		greeting,
 	)
 
@@ -300,7 +335,7 @@ func (h *StartHandler) handleOnboardingSuccess(result *saga.OnboardingResult) (*
 	}, nil
 }
 
-// HandleTextMessage handles text messages (Alem login input during onboarding).
+// HandleTextMessage handles text messages (email/password input during onboarding).
 func (h *StartHandler) HandleTextMessage(ctx context.Context, req StartRequest, text string) (*StartResponse, error) {
 	// Check if already registered
 	existingStudent, err := h.studentRepo.GetByTelegramID(ctx, student.TelegramID(req.TelegramID))
@@ -314,9 +349,173 @@ func (h *StartHandler) HandleTextMessage(ctx context.Context, req StartRequest, 
 		}, nil
 	}
 
-	// Treat text as Alem login attempt
-	req.DeepLinkParam = text
-	return h.handleOnboarding(ctx, req)
+	// Check for pending onboarding session
+	pendingOnboardings.Lock()
+	pending, exists := pendingOnboardings.data[req.TelegramID]
+
+	// Clean up expired sessions (older than 10 minutes)
+	if exists && time.Since(pending.CreatedAt) > 10*time.Minute {
+		delete(pendingOnboardings.data, req.TelegramID)
+		exists = false
+		pending = nil
+	}
+	pendingOnboardings.Unlock()
+
+	if !exists {
+		// No pending session - start new one by asking for email
+		return h.handleAskForLogin(ctx, req)
+	}
+
+	text = strings.TrimSpace(text)
+
+	switch pending.Step {
+	case StepWaitingForEmail:
+		// User sent email - validate and ask for password
+		if !isValidEmail(text) {
+			return &StartResponse{
+				Text: "❌ <b>Некорректный email</b>\n\n" +
+					"Пожалуйста, введи корректный email от alem.school\n" +
+					"Например: <code>student@alem.school</code>",
+				ParseMode: "HTML",
+				IsError:   true,
+			}, nil
+		}
+
+		// Store email and move to password step
+		pendingOnboardings.Lock()
+		pendingOnboardings.data[req.TelegramID] = &PendingOnboarding{
+			Email:     text,
+			Step:      StepWaitingForPassword,
+			CreatedAt: time.Now(),
+		}
+		pendingOnboardings.Unlock()
+
+		return &StartResponse{
+			Text: fmt.Sprintf(
+				"📧 Email: <code>%s</code>\n\n"+
+					"🔐 <b>Теперь введи пароль от alem.school:</b>\n\n"+
+					"<i>Пароль будет использован только для авторизации и не сохраняется.</i>",
+				escapeHTML(text),
+			),
+			ParseMode: "HTML",
+			IsError:   false,
+		}, nil
+
+	case StepWaitingForPassword:
+		// User sent password - try to authenticate
+		email := pending.Email
+
+		// Clear pending state
+		pendingOnboardings.Lock()
+		delete(pendingOnboardings.data, req.TelegramID)
+		pendingOnboardings.Unlock()
+
+		// Try to authenticate
+		return h.handleAuthentication(ctx, req, email, text)
+	}
+
+	// Unknown state - restart
+	return h.handleAskForLogin(ctx, req)
+}
+
+// handleAuthentication handles the authentication step.
+func (h *StartHandler) handleAuthentication(ctx context.Context, req StartRequest, email, password string) (*StartResponse, error) {
+	if h.onboardingSaga == nil {
+		return &StartResponse{
+			Text: "⚠️ <b>Сервис временно недоступен</b>\n\n" +
+				"Функция регистрации временно недоступна.\n" +
+				"Попробуй позже.",
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+
+	// Execute authentication via saga
+	input := saga.OnboardingInput{
+		TelegramID:       req.TelegramID,
+		TelegramUsername: req.TelegramUsername,
+		Email:            email,
+		Password:         password,
+	}
+
+	result, err := h.onboardingSaga.Execute(ctx, input)
+	if err != nil {
+		return h.handleAuthError(err, email)
+	}
+
+	// Success - build welcome message
+	return h.handleOnboardingSuccess(result)
+}
+
+// handleAuthError handles authentication errors.
+func (h *StartHandler) handleAuthError(err error, email string) (*StartResponse, error) {
+	var onboardingErr *saga.OnboardingError
+	if errors.As(err, &onboardingErr) {
+		switch {
+		case errors.Is(onboardingErr.Cause, saga.ErrInvalidCredentials):
+			return &StartResponse{
+				Text: "❌ <b>Неверный email или пароль</b>\n\n" +
+					"Проверь правильность введённых данных и попробуй снова.\n\n" +
+					"Используй /start чтобы начать заново.",
+				ParseMode: "HTML",
+				IsError:   true,
+			}, nil
+
+		case errors.Is(onboardingErr.Cause, saga.ErrStudentAlreadyRegistered):
+			return &StartResponse{
+				Text: "⚠️ <b>Аккаунт уже зарегистрирован</b>\n\n" +
+					"Этот Telegram аккаунт уже связан с другим логином Alem.\n" +
+					"Используй /me чтобы посмотреть свой профиль.",
+				ParseMode: "HTML",
+				IsError:   true,
+			}, nil
+
+		case errors.Is(onboardingErr.Cause, saga.ErrAlemLoginAlreadyLinked):
+			return &StartResponse{
+				Text: fmt.Sprintf(
+					"⚠️ <b>Email уже используется</b>\n\n"+
+						"Email <code>%s</code> уже связан с другим Telegram аккаунтом.\n\n"+
+						"Если это твой email и ты потерял доступ к старому аккаунту, "+
+						"обратись к администратору.",
+					escapeHTML(email),
+				),
+				ParseMode: "HTML",
+				IsError:   true,
+			}, nil
+
+		case errors.Is(onboardingErr.Cause, saga.ErrAlemAPIUnavailable):
+			return &StartResponse{
+				Text: "⚠️ <b>Сервис временно недоступен</b>\n\n" +
+					"Не удалось связаться с платформой Alem.\n" +
+					"Попробуй через несколько минут.",
+				ParseMode: "HTML",
+				IsError:   true,
+			}, nil
+		}
+	}
+
+	// Generic error
+	return &StartResponse{
+		Text: "❌ <b>Ошибка авторизации</b>\n\n" +
+			"Не удалось войти в аккаунт.\n" +
+			"Проверь данные и попробуй снова с помощью /start",
+		ParseMode: "HTML",
+		IsError:   true,
+	}, nil
+}
+
+// isValidEmail checks if the string is a valid email.
+func isValidEmail(email string) bool {
+	// Simple email validation
+	if len(email) < 5 || len(email) > 100 {
+		return false
+	}
+	atIdx := strings.Index(email, "@")
+	if atIdx < 1 || atIdx > len(email)-3 {
+		return false
+	}
+	dotIdx := strings.LastIndex(email, ".")
+	return dotIdx > atIdx+1 && dotIdx < len(email)-1
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
