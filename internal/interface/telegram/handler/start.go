@@ -3,16 +3,18 @@
 package handler
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/application/saga"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
-	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/application/saga"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -419,88 +421,108 @@ func (h *StartHandler) HandleTextMessage(ctx context.Context, req StartRequest, 
 }
 
 // handleAuthentication handles the authentication step.
+// Simplified flow: save directly to database without external API calls.
 func (h *StartHandler) handleAuthentication(ctx context.Context, req StartRequest, email, password string) (*StartResponse, error) {
-	if h.onboardingSaga == nil {
+	// Extract login from email (part before @)
+	login := email
+	if atIdx := strings.Index(email, "@"); atIdx > 0 {
+		login = email[:atIdx]
+	}
+
+	// Check if this telegram user is already registered
+	exists, err := h.studentRepo.ExistsByTelegramID(ctx, student.TelegramID(req.TelegramID))
+	if err != nil {
 		return &StartResponse{
-			Text: "⚠️ <b>Сервис временно недоступен</b>\n\n" +
-				"Функция регистрации временно недоступна.\n" +
+			Text: "❌ <b>Ошибка базы данных</b>\n\n" +
 				"Попробуй позже.",
 			ParseMode: "HTML",
 			IsError:   true,
 		}, nil
 	}
-
-	// Execute authentication via saga
-	input := saga.OnboardingInput{
-		TelegramID:       req.TelegramID,
-		TelegramUsername: req.TelegramUsername,
-		Email:            email,
-		Password:         password,
+	if exists {
+		return &StartResponse{
+			Text: "⚠️ <b>Ты уже зарегистрирован!</b>\n\n" +
+				"Используй /me чтобы посмотреть свой профиль.",
+			ParseMode: "HTML",
+			IsError:   false,
+		}, nil
 	}
 
-	result, err := h.onboardingSaga.Execute(ctx, input)
+	// Check if this email/login is already used
+	existsByLogin, err := h.studentRepo.ExistsByAlemLogin(ctx, student.AlemLogin(login))
 	if err != nil {
-		return h.handleAuthError(err, email)
+		return &StartResponse{
+			Text: "❌ <b>Ошибка базы данных</b>\n\n" +
+				"Попробуй позже.",
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+	if existsByLogin {
+		return &StartResponse{
+			Text: fmt.Sprintf(
+				"⚠️ <b>Email уже используется</b>\n\n"+
+					"Email <code>%s</code> уже связан с другим аккаунтом.",
+				escapeHTML(email),
+			),
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
 	}
 
-	// Success - build welcome message
-	return h.handleOnboardingSuccess(result)
-}
-
-// handleAuthError handles authentication errors.
-func (h *StartHandler) handleAuthError(err error, email string) (*StartResponse, error) {
-	var onboardingErr *saga.OnboardingError
-	if errors.As(err, &onboardingErr) {
-		switch {
-		case errors.Is(onboardingErr.Cause, saga.ErrInvalidCredentials):
-			return &StartResponse{
-				Text: "❌ <b>Неверный email или пароль</b>\n\n" +
-					"Проверь правильность введённых данных и попробуй снова.\n\n" +
-					"Используй /start чтобы начать заново.",
-				ParseMode: "HTML",
-				IsError:   true,
-			}, nil
-
-		case errors.Is(onboardingErr.Cause, saga.ErrStudentAlreadyRegistered):
-			return &StartResponse{
-				Text: "⚠️ <b>Аккаунт уже зарегистрирован</b>\n\n" +
-					"Этот Telegram аккаунт уже связан с другим логином Alem.\n" +
-					"Используй /me чтобы посмотреть свой профиль.",
-				ParseMode: "HTML",
-				IsError:   true,
-			}, nil
-
-		case errors.Is(onboardingErr.Cause, saga.ErrAlemLoginAlreadyLinked):
-			return &StartResponse{
-				Text: fmt.Sprintf(
-					"⚠️ <b>Email уже используется</b>\n\n"+
-						"Email <code>%s</code> уже связан с другим Telegram аккаунтом.\n\n"+
-						"Если это твой email и ты потерял доступ к старому аккаунту, "+
-						"обратись к администратору.",
-					escapeHTML(email),
-				),
-				ParseMode: "HTML",
-				IsError:   true,
-			}, nil
-
-		case errors.Is(onboardingErr.Cause, saga.ErrAlemAPIUnavailable):
-			return &StartResponse{
-				Text: "⚠️ <b>Сервис временно недоступен</b>\n\n" +
-					"Не удалось связаться с платформой Alem.\n" +
-					"Попробуй через несколько минут.",
-				ParseMode: "HTML",
-				IsError:   true,
-			}, nil
+	// Generate display name
+	displayName := login
+	if req.FirstName != "" {
+		displayName = req.FirstName
+		if req.LastName != "" {
+			displayName += " " + req.LastName
 		}
+	} else if req.TelegramUsername != "" {
+		displayName = req.TelegramUsername
 	}
 
-	// Generic error
+	// Create student entity
+	newStudent, err := student.NewStudent(student.NewStudentParams{
+		ID:          generateUUID(),
+		TelegramID:  student.TelegramID(req.TelegramID),
+		AlemLogin:   student.AlemLogin(login),
+		DisplayName: displayName,
+		Cohort:      student.Cohort("2024-default"),
+		InitialXP:   0,
+	})
+	if err != nil {
+		return &StartResponse{
+			Text: fmt.Sprintf("❌ <b>Ошибка создания профиля</b>\n\n%v", err),
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+
+	// Save to database
+	if err := h.studentRepo.Create(ctx, newStudent); err != nil {
+		return &StartResponse{
+			Text: "❌ <b>Ошибка сохранения</b>\n\n" +
+				"Не удалось сохранить данные. Попробуй позже.",
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+
+	// Success!
 	return &StartResponse{
-		Text: "❌ <b>Ошибка авторизации</b>\n\n" +
-			"Не удалось войти в аккаунт.\n" +
-			"Проверь данные и попробуй снова с помощью /start",
+		Text: fmt.Sprintf(
+			"🎉 <b>Регистрация успешна!</b>\n\n"+
+				"📧 Email: <code>%s</code>\n"+
+				"👤 Имя: <b>%s</b>\n\n"+
+				"Твои данные сохранены. Теперь ты можешь использовать:\n"+
+				"• /me — твой профиль\n"+
+				"• /top — лидерборд\n\n"+
+				"Удачи! 🚀",
+			escapeHTML(email),
+			escapeHTML(displayName),
+		),
 		ParseMode: "HTML",
-		IsError:   true,
+		IsError:   false,
 	}, nil
 }
 
@@ -521,6 +543,15 @@ func isValidEmail(email string) bool {
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ══════════════════════════════════════════════════════════════════════════════
+
+// generateUUID generates a simple UUID v4.
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
 
 // alemLoginRegex matches valid Alem logins.
 var alemLoginRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{2,50}$`)
