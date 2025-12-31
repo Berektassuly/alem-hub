@@ -496,17 +496,27 @@ func (b *Bot) handleMessage(ctx context.Context, msg *telegram.Message) error {
 	telegramID := msg.From.ID
 	chatID := msg.Chat.ID
 
+	// DEBUG: Log all incoming messages
+	b.logger.Info("📨 INCOMING MESSAGE",
+		"telegram_id", telegramID,
+		"chat_id", chatID,
+		"text", msg.Text,
+		"from", msg.From.Username,
+	)
+
 	// Extract command
 	command := telegram.ExtractCommand(msg)
 	args := telegram.ExtractCommandArgs(msg)
 
 	// If it's a command
 	if command != "" {
+		b.logger.Info("📌 COMMAND DETECTED", "command", command, "args", args)
 		return b.handleCommand(ctx, telegramID, chatID, int(msg.MessageID), command, args, msg)
 	}
 
 	// If it's a text message (might be onboarding input)
 	if msg.Text != "" {
+		b.logger.Info("📝 TEXT MESSAGE - forwarding to handleTextMessage", "text", msg.Text)
 		return b.handleTextMessage(ctx, telegramID, chatID, msg)
 	}
 
@@ -575,15 +585,27 @@ func (b *Bot) handleCommand(
 
 // handleTextMessage processes a non-command text message.
 func (b *Bot) handleTextMessage(ctx context.Context, telegramID, chatID int64, msg *telegram.Message) error {
+	b.logger.Info("🔍 handleTextMessage CALLED",
+		"telegram_id", telegramID,
+		"text", msg.Text,
+	)
+
 	// Check if user is in onboarding state (not registered)
 	authResult, err := b.authMiddleware.Authenticate(ctx, telegramID, "")
 	if err != nil {
+		b.logger.Error("❌ Auth error in handleTextMessage", "error", err)
 		return nil // Ignore errors for text messages
 	}
 
+	b.logger.Info("🔐 Auth result",
+		"is_authenticated", authResult.IsAuthenticated,
+		"should_continue", authResult.ShouldContinue,
+	)
+
 	// If user is not registered, treat as Alem login input
 	if !authResult.IsAuthenticated {
-		return b.router.HandleTextInput(ctx, TextInputContext{
+		b.logger.Info("✅ User NOT authenticated - forwarding to HandleTextInput")
+		err := b.router.HandleTextInput(ctx, TextInputContext{
 			TelegramID: telegramID,
 			ChatID:     chatID,
 			MessageID:  int(msg.MessageID),
@@ -591,10 +613,14 @@ func (b *Bot) handleTextMessage(ctx context.Context, telegramID, chatID int64, m
 			Message:    msg,
 			Client:     b.client,
 		})
+		if err != nil {
+			b.logger.Error("❌ HandleTextInput error", "error", err)
+		}
+		return err
 	}
 
 	// User is registered but sent a text message - might be a query or just chat
-	// For now, we ignore regular text messages from registered users
+	b.logger.Info("⏭️ User IS authenticated - ignoring text message")
 	return nil
 }
 
