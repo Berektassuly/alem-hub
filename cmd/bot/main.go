@@ -28,6 +28,9 @@ import (
 	"github.com/alem-hub/alem-community-hub/internal/application/query"
 	"github.com/alem-hub/alem-community-hub/internal/application/saga"
 
+	// Domain layer
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+
 	// Infrastructure layer
 	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/alem"
 	"github.com/alem-hub/alem-community-hub/internal/infrastructure/messaging"
@@ -40,6 +43,9 @@ import (
 
 	// Packages
 	"github.com/alem-hub/alem-community-hub/pkg/logger"
+
+	// External
+	"github.com/google/uuid"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -244,7 +250,6 @@ func run(ctx context.Context) error {
 	alemConfig.APIKey = cfg.AlemAPIToken
 	alemConfig.Logger = log
 	alemClient := alem.NewClient(alemConfig)
-	_ = alemClient // TODO: Used when handlers are properly initialized
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 9. ИНИЦИАЛИЗАЦИЯ APPLICATION LAYER (Commands, Queries, Sagas)
@@ -284,9 +289,21 @@ func run(ctx context.Context) error {
 	_ = findHelpersQuery
 	_ = onlineNowQuery
 
-	// TODO: Saga requires many dependencies that are not yet implemented
-	var onboardingSaga *saga.OnboardingSaga = nil
-	_ = onboardingSaga
+	// Initialize OnboardingSaga with adapters for dependencies
+	alemClientAdapt := &alemClientAdapter{client: alemClient}
+	idGen := &uuidGenerator{}
+	noopNotifSvc := &noopNotificationService{logger: log}
+
+	onboardingSaga := saga.NewOnboardingSaga(
+		studentRepo,
+		progressRepo,
+		leaderboardRepo,
+		noopNotifSvc,
+		alemClientAdapt,
+		eventBus,
+		idGen,
+		saga.DefaultOnboardingConfig(),
+	)
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 10. РЕГИСТРАЦИЯ EVENT HANDLERS
@@ -536,4 +553,89 @@ func (a *leaderboardServiceAdapter) GetStudentRank(ctx context.Context, studentI
 // InvalidateCache implements command.LeaderboardService.
 func (a *leaderboardServiceAdapter) InvalidateCache(ctx context.Context) error {
 	return nil // No-op for now, cache invalidation is handled separately
+}
+
+// alemClientAdapter adapts alem.Client to saga.AlemAPIClient.
+type alemClientAdapter struct {
+	client *alem.Client
+}
+
+// GetStudentByLogin implements saga.AlemAPIClient.
+func (a *alemClientAdapter) GetStudentByLogin(ctx context.Context, login string) (*saga.AlemStudentData, error) {
+	dto, err := a.client.GetStudentByLogin(ctx, login)
+	if err != nil {
+		return nil, err
+	}
+	if dto == nil {
+		return nil, nil
+	}
+	return &saga.AlemStudentData{
+		Login:       dto.Login,
+		DisplayName: dto.FullName(),
+		XP:          dto.XP,
+		Level:       dto.Level,
+		Cohort:      dto.Cohort,
+		JoinedAt:    dto.CreatedAt,
+	}, nil
+}
+
+// ValidateLogin implements saga.AlemAPIClient.
+func (a *alemClientAdapter) ValidateLogin(ctx context.Context, login string) (bool, error) {
+	dto, err := a.client.GetStudentByLogin(ctx, login)
+	if err != nil {
+		return false, err
+	}
+	return dto != nil, nil
+}
+
+// uuidGenerator implements saga.IDGenerator using Google UUID.
+type uuidGenerator struct{}
+
+// GenerateID implements saga.IDGenerator.
+func (g *uuidGenerator) GenerateID() string {
+	return uuid.New().String()
+}
+
+// noopNotificationService implements notification.NotificationService as a no-op.
+// Used when real notification infrastructure is not available.
+type noopNotificationService struct {
+	logger *slog.Logger
+}
+
+// CreateNotification implements notification.NotificationService.
+func (s *noopNotificationService) CreateNotification(ctx context.Context, rule *notification.TriggerRule, triggerCtx *notification.TriggerContext) (*notification.Notification, error) {
+	s.logger.Debug("noop: CreateNotification called")
+	return nil, nil
+}
+
+// ScheduleNotification implements notification.NotificationService.
+func (s *noopNotificationService) ScheduleNotification(ctx context.Context, n *notification.Notification) error {
+	s.logger.Debug("noop: ScheduleNotification called", "notification_id", n.ID)
+	return nil
+}
+
+// CancelNotification implements notification.NotificationService.
+func (s *noopNotificationService) CancelNotification(ctx context.Context, id notification.NotificationID) error {
+	s.logger.Debug("noop: CancelNotification called", "notification_id", id)
+	return nil
+}
+
+// ProcessPendingNotifications implements notification.NotificationService.
+func (s *noopNotificationService) ProcessPendingNotifications(ctx context.Context, batchSize int) (int, error) {
+	return 0, nil
+}
+
+// ProcessExpiredNotifications implements notification.NotificationService.
+func (s *noopNotificationService) ProcessExpiredNotifications(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
+// RetryFailedNotifications implements notification.NotificationService.
+func (s *noopNotificationService) RetryFailedNotifications(ctx context.Context, batchSize int) (int, error) {
+	return 0, nil
+}
+
+// EvaluateTriggers implements notification.NotificationService.
+func (s *noopNotificationService) EvaluateTriggers(ctx context.Context, triggerCtx *notification.TriggerContext) ([]*notification.TriggerRule, error) {
+	return nil, nil
 }
