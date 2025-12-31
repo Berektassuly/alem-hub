@@ -2,7 +2,8 @@
 package http
 
 import (
-	"alem-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/pkg/logger"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -120,7 +121,7 @@ func (s *Server) handleLeaderboardInternal(w http.ResponseWriter, r *http.Reques
 	// Execute query
 	result, err := s.deps.GetLeaderboardHandler.Handle(r.Context(), q)
 	if err != nil {
-		s.logger.Error("failed to get leaderboard", "error", err)
+		s.logger.Error("failed to get leaderboard", logger.Err(err))
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to get leaderboard")
 		return
 	}
@@ -162,7 +163,7 @@ func (s *Server) handleGetStudent(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.deps.GetStudentRankHandler.Handle(r.Context(), q)
 	if err != nil {
-		s.logger.Error("failed to get student", "error", err, "student_id", studentID)
+		s.logger.Error("failed to get student", logger.Err(err), logger.String("student_id", studentID))
 		writeJSONError(w, http.StatusNotFound, "not_found", "Student not found")
 		return
 	}
@@ -192,7 +193,7 @@ func (s *Server) handleGetStudentRank(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.deps.GetStudentRankHandler.Handle(r.Context(), q)
 	if err != nil {
-		s.logger.Error("failed to get student rank", "error", err, "student_id", studentID)
+		s.logger.Error("failed to get student rank", logger.Err(err), logger.String("student_id", studentID))
 		writeJSONError(w, http.StatusNotFound, "not_found", "Student rank not found")
 		return
 	}
@@ -214,15 +215,15 @@ func (s *Server) handleGetStudentNeighbors(w http.ResponseWriter, r *http.Reques
 	}
 
 	q := query.GetNeighborsQuery{
-		StudentID:     studentID,
-		Cohort:        getQueryParam(r, "cohort", ""),
-		Radius:        getQueryParamInt(r, "radius", 5),
-		IncludeOnline: getQueryParamBool(r, "include_online"),
+		StudentID:           studentID,
+		Cohort:              getQueryParam(r, "cohort", ""),
+		RangeSize:           getQueryParamInt(r, "radius", 5),
+		IncludeOnlineStatus: getQueryParamBool(r, "include_online"),
 	}
 
 	result, err := s.deps.GetNeighborsHandler.Handle(r.Context(), q)
 	if err != nil {
-		s.logger.Error("failed to get neighbors", "error", err, "student_id", studentID)
+		s.logger.Error("failed to get neighbors", logger.Err(err), logger.String("student_id", studentID))
 		writeJSONError(w, http.StatusNotFound, "not_found", "Neighbors not found")
 		return
 	}
@@ -245,13 +246,14 @@ func (s *Server) handleGetStudentProgress(w http.ResponseWriter, r *http.Request
 
 	q := query.GetDailyProgressQuery{
 		StudentID:         studentID,
-		Days:              getQueryParamInt(r, "days", 7),
+		HistoryDays:       getQueryParamInt(r, "days", 7),
+		IncludeHistory:    true,
 		IncludeComparison: getQueryParamBool(r, "include_comparison"),
 	}
 
 	result, err := s.deps.GetDailyProgressHandler.Handle(r.Context(), q)
 	if err != nil {
-		s.logger.Error("failed to get progress", "error", err, "student_id", studentID)
+		s.logger.Error("failed to get progress", logger.Err(err), logger.String("student_id", studentID))
 		writeJSONError(w, http.StatusNotFound, "not_found", "Progress not found")
 		return
 	}
@@ -285,7 +287,7 @@ func (s *Server) handleGetOnline(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.deps.GetOnlineNowHandler.Handle(r.Context(), q)
 	if err != nil {
-		s.logger.Error("failed to get online students", "error", err)
+		s.logger.Error("failed to get online students", logger.Err(err))
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to get online students")
 		return
 	}
@@ -316,17 +318,17 @@ func (s *Server) handleFindHelpers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := query.FindHelpersQuery{
-		TaskID:           taskID,
-		Cohort:           getQueryParam(r, "cohort", ""),
-		OnlyOnline:       getQueryParamBool(r, "only_online"),
-		MinHelpRating:    0, // Could parse from query param if needed
-		Limit:            getQueryParamInt(r, "limit", 10),
-		ExcludeStudentID: getQueryParam(r, "exclude", ""),
+		TaskID:        taskID,
+		Cohort:        getQueryParam(r, "cohort", ""),
+		PreferOnline:  getQueryParamBool(r, "only_online"),
+		MinHelpRating: 0, // Could parse from query param if needed
+		Limit:         getQueryParamInt(r, "limit", 10),
+		RequesterID:   getQueryParam(r, "exclude", ""),
 	}
 
 	result, err := s.deps.FindHelpersHandler.Handle(r.Context(), q)
 	if err != nil {
-		s.logger.Error("failed to find helpers", "error", err, "task_id", taskID)
+		s.logger.Error("failed to find helpers", logger.Err(err), logger.String("task_id", taskID))
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "Failed to find helpers")
 		return
 	}
@@ -433,7 +435,7 @@ func (s *Server) handleTelegramWebhookWithToken(w http.ResponseWriter, r *http.R
 func (s *Server) processTelegramWebhook(w http.ResponseWriter, r *http.Request, token string) {
 	// Validate token if configured
 	if s.config.WebhookSecret != "" && token != s.config.WebhookSecret {
-		s.logger.Warn("invalid webhook token", "ip", getClientIP(r))
+		s.logger.Warn("invalid webhook token", logger.String("ip", getClientIP(r)))
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook token")
 		return
 	}
@@ -441,7 +443,7 @@ func (s *Server) processTelegramWebhook(w http.ResponseWriter, r *http.Request, 
 	// Read body
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1MB limit
 	if err != nil {
-		s.logger.Error("failed to read webhook body", "error", err)
+		s.logger.Error("failed to read webhook body", logger.Err(err))
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "Failed to read request body")
 		return
 	}
@@ -450,22 +452,22 @@ func (s *Server) processTelegramWebhook(w http.ResponseWriter, r *http.Request, 
 	// Parse payload
 	var payload TelegramWebhookPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		s.logger.Error("failed to parse webhook payload", "error", err)
+		s.logger.Error("failed to parse webhook payload", logger.Err(err))
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON payload")
 		return
 	}
 
 	// Log webhook receipt
 	s.logger.Info("received telegram webhook",
-		"update_id", payload.UpdateID,
-		"has_message", payload.Message != nil,
-		"has_callback", payload.CallbackQuery != nil,
+		logger.Int64("update_id", payload.UpdateID),
+		logger.Bool("has_message", payload.Message != nil),
+		logger.Bool("has_callback", payload.CallbackQuery != nil),
 	)
 
 	// Delegate to webhook handler if configured
 	if s.deps.WebhookHandler != nil {
 		if err := s.deps.WebhookHandler.HandleTelegramUpdate(r.Context(), body); err != nil {
-			s.logger.Error("failed to handle telegram update", "error", err)
+			s.logger.Error("failed to handle telegram update", logger.Err(err))
 			// Still return 200 to Telegram to avoid retries
 		}
 	}

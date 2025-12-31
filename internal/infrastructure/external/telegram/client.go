@@ -4,7 +4,7 @@
 package telegram
 
 import (
-	"alem-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -51,7 +51,7 @@ func DefaultClientConfig(token string) ClientConfig {
 	return ClientConfig{
 		Token:         token,
 		BaseURL:       "https://api.telegram.org",
-		Timeout:       30 * time.Second,
+		Timeout:       60 * time.Second, // Must be > polling timeout (30s) + network latency
 		RetryAttempts: 3,
 		RetryDelay:    1 * time.Second,
 	}
@@ -472,7 +472,7 @@ func (c *Client) Send(ctx context.Context, notif *notification.Notification, opt
 
 	// Send message
 	msg, err := c.SendMessage(ctx, SendMessageParams{
-		ChatID:              notif.TelegramChatID,
+		ChatID:              int64(notif.TelegramChatID),
 		Text:                notif.Message,
 		ParseMode:           opts.ParseMode,
 		DisableNotification: opts.DisableNotification,

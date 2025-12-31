@@ -807,7 +807,7 @@ func (l *LeaderboardCache) getEntriesWithRanks(ctx context.Context, studentIDs [
 	}
 
 	entries := make([]LeaderboardEntry, 0, len(studentIDs))
-	for i, val := range values {
+	for _, val := range values {
 		if val == nil {
 			continue
 		}

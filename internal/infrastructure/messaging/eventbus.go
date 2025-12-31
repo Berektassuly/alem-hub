@@ -3,7 +3,7 @@
 package messaging
 
 import (
-	"alem-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
 	"context"
 	"encoding/json"
 	"errors"

@@ -2,10 +2,10 @@
 package query
 
 import (
-	"alem-hub/internal/domain/activity"
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"sort"
@@ -417,7 +417,7 @@ func (h *GetOnlineNowHandler) buildDTO(
 func (h *GetOnlineNowHandler) enrichWithActivity(ctx context.Context, dto *OnlineStudentDTO, studentID string) {
 	progress, err := h.activityRepo.GetDailyProgress(ctx, activity.StudentID(studentID), time.Now().UTC())
 	if err == nil && progress != nil {
-		dto.TodayXPGained = progress.XPGained
+		dto.TodayXPGained = progress.XPEarned
 		dto.TodayTasksCompleted = progress.TasksCompleted
 	}
 }

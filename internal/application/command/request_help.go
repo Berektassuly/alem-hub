@@ -2,10 +2,10 @@
 package command
 
 import (
-	"alem-hub/internal/domain/activity"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
@@ -271,7 +271,6 @@ func (h *RequestHelpHandler) Handle(ctx context.Context, cmd RequestHelpCommand)
 				MatchScore: helper.MatchScore,
 				IsOnline:   helper.IsOnline,
 				LastSeenAt: helper.LastSeenAt,
-				MatchedAt:  now,
 			})
 		}
 		_ = h.socialRepo.HelpRequests().Update(ctx, request)
@@ -311,7 +310,8 @@ func (h *RequestHelpHandler) createHelpRequest(
 		ID:          requestID,
 		RequesterID: social.StudentID(cmd.RequesterID),
 		TaskID:      social.TaskID(cmd.TaskID),
-		Message:     cmd.Message,
+		TaskName:    cmd.TaskID, // Using task ID as name
+		Description: cmd.Message,
 		Priority:    cmd.Priority,
 		DeadlineAt:  cmd.DeadlineAt,
 	}
@@ -687,7 +687,13 @@ func (h *ResolveHelpRequestHandler) Handle(
 		helperID = &h
 	}
 
-	if err := request.Resolve(helperID, cmd.Resolution); err != nil {
+	resolution := social.HelpResolution{
+		Method:   social.HelpResolutionWithHelper,
+		HelperID: helperID,
+		Notes:    cmd.Resolution,
+	}
+
+	if err := request.Resolve(resolution); err != nil {
 		return nil, fmt.Errorf("resolve_help: failed to resolve: %w", err)
 	}
 

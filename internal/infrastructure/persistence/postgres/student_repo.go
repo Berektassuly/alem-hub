@@ -2,7 +2,7 @@
 package postgres
 
 import (
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"encoding/json"
 	"fmt"

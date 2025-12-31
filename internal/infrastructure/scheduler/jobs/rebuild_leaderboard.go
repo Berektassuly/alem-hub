@@ -2,9 +2,9 @@
 package jobs
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
@@ -362,19 +362,20 @@ func (j *RebuildLeaderboardJob) notifyRankChange(
 	oldRank := leaderboard.Rank(int(entry.Rank) - int(change))
 	newRank := entry.Rank
 
+	cohort := string(entry.Cohort)
 	if change > 0 {
 		// Student moved up
 		err = j.notifier.NotifyRankUp(ctx, studentID, oldRank, newRank, change)
 
 		// Emit event
-		event := shared.NewRankChangedEvent(studentID, int(oldRank), int(newRank))
+		event := shared.NewRankChangedEvent(studentID, int(oldRank), int(newRank), cohort)
 		_ = j.eventPublisher.Publish(event)
 	} else {
 		// Student moved down
 		err = j.notifier.NotifyRankDown(ctx, studentID, oldRank, newRank, change)
 
 		// Emit event
-		event := shared.NewRankChangedEvent(studentID, int(oldRank), int(newRank))
+		event := shared.NewRankChangedEvent(studentID, int(oldRank), int(newRank), cohort)
 		_ = j.eventPublisher.Publish(event)
 	}
 
@@ -408,8 +409,8 @@ func (j *RebuildLeaderboardJob) notifyTopNEntry(
 	} else {
 		stats.NotificationsSent++
 
-		// Emit event
-		event := shared.NewEnteredTopNEvent(change.StudentID, change.EnteredTop, int(change.NewRank))
+		// Emit event (use "all" as default cohort for top N events)
+		event := shared.NewEnteredTopNEvent(change.StudentID, change.EnteredTop, int(change.NewRank), "all")
 		_ = j.eventPublisher.Publish(event)
 	}
 }

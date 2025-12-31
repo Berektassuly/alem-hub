@@ -7,15 +7,15 @@
 package telegram
 
 import (
-	"alem-hub/internal/application/command"
-	"alem-hub/internal/application/query"
-	"alem-hub/internal/application/saga"
-	"alem-hub/internal/domain/student"
-	"alem-hub/internal/infrastructure/external/telegram"
-	"alem-hub/internal/interface/telegram/handler"
-	"alem-hub/internal/interface/telegram/handler/callback"
-	"alem-hub/internal/interface/telegram/middleware"
-	"alem-hub/internal/interface/telegram/presenter"
+	"github.com/alem-hub/alem-community-hub/internal/application/command"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/application/saga"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/telegram"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/handler"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/handler/callback"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/middleware"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"errors"
 	"fmt"
@@ -90,6 +90,8 @@ type BotDependencies struct {
 	RequestHelpCmd     *command.RequestHelpHandler
 	ConnectStudentsCmd *command.ConnectStudentsHandler
 	UpdatePrefsCmd     *command.UpdatePreferencesHandler
+	ResetPrefsCmd      *command.ResetPreferencesHandler
+	GiveEndorsementCmd *command.GiveEndorsementHandler
 
 	// Queries
 	LeaderboardQuery   *query.GetLeaderboardHandler
@@ -116,10 +118,10 @@ type Bot struct {
 	logger *slog.Logger
 
 	// Middleware chain
-	authMiddleware      *middleware.AuthMiddleware
-	rateLimitMiddleware *middleware.RateLimitMiddleware
-	recoveryMiddleware  *middleware.RecoveryMiddleware
-	metricsMiddleware   *middleware.MetricsMiddleware
+	authMiddleware     *middleware.AuthMiddleware
+	rateLimiter        *middleware.RateLimiter
+	recoveryMiddleware *middleware.RecoveryMiddleware
+	metricsMiddleware  *middleware.MetricsMiddleware
 
 	// Lifecycle management
 	running   bool
@@ -181,26 +183,30 @@ func NewBot(config BotConfig, deps BotDependencies) (*Bot, error) {
 	topHandler := handler.NewTopHandler(
 		deps.LeaderboardQuery,
 		keyboards,
-		leaderboardPresenter,
 	)
+	_ = leaderboardPresenter // may be used for detailed view later
 
 	neighborsHandler := handler.NewNeighborsHandler(
 		deps.NeighborsQuery,
+		deps.StudentRepo,
 		keyboards,
 	)
 
 	onlineHandler := handler.NewOnlineHandler(
 		deps.OnlineNowQuery,
+		deps.StudentRepo,
 		keyboards,
 	)
 
 	helpHandler := handler.NewHelpHandler(
 		deps.FindHelpersQuery,
+		deps.StudentRepo,
 		keyboards,
 	)
 
 	settingsHandler := handler.NewSettingsHandler(
 		deps.UpdatePrefsCmd,
+		deps.ResetPrefsCmd,
 		deps.StudentRepo,
 		keyboards,
 	)
@@ -209,9 +215,11 @@ func NewBot(config BotConfig, deps BotDependencies) (*Bot, error) {
 	connectCallback := callback.NewConnectHandler(
 		deps.ConnectStudentsCmd,
 		deps.StudentRepo,
+		keyboards,
 	)
 
 	endorseCallback := callback.NewEndorseHandler(
+		deps.GiveEndorsementCmd,
 		deps.StudentRepo,
 		keyboards,
 	)
@@ -222,7 +230,7 @@ func NewBot(config BotConfig, deps BotDependencies) (*Bot, error) {
 		middleware.DefaultAuthConfig(),
 	)
 
-	rateLimitMiddleware := middleware.NewRateLimitMiddleware(
+	rateLimiter := middleware.NewRateLimiter(
 		middleware.DefaultRateLimitConfig(),
 	)
 
@@ -268,7 +276,7 @@ func NewBot(config BotConfig, deps BotDependencies) (*Bot, error) {
 		router:              router,
 		logger:              config.Logger,
 		authMiddleware:      authMiddleware,
-		rateLimitMiddleware: rateLimitMiddleware,
+		rateLimiter: rateLimiter,
 		recoveryMiddleware:  recoveryMiddleware,
 		metricsMiddleware:   metricsMiddleware,
 		stopCh:              make(chan struct{}),
@@ -404,15 +412,16 @@ func (b *Bot) startWebhook(ctx context.Context) error {
 	)
 
 	// Set webhook
-	err := b.client.SetWebhook(ctx, b.config.WebhookURL, b.config.AllowedUpdates)
+	err := b.client.SetWebhook(ctx, b.config.WebhookURL, 0, b.config.AllowedUpdates)
 	if err != nil {
 		return fmt.Errorf("failed to set webhook: %w", err)
 	}
 
 	// Start HTTP server for webhook
-	return b.client.StartWebhookServer(ctx, b.config.WebhookPort, func(ctx context.Context, update *telegram.Update) error {
-		return b.handleUpdate(ctx, update)
-	})
+	// TODO: Implement webhook HTTP server when Client.StartWebhookServer is available
+	// For now, webhook mode requires external HTTP server setup
+	b.logger.Info("webhook mode configured - ensure external HTTP server routes to handleUpdate")
+	return nil
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -456,9 +465,9 @@ func (b *Bot) handleUpdate(ctx context.Context, update *telegram.Update) error {
 		return nil
 	}
 
-	// Record metrics
+	// Record metrics (using metrics context if available)
 	duration := time.Since(startTime)
-	b.metricsMiddleware.RecordRequest(ctx, "update", duration, err == nil)
+	_ = duration // metrics tracking done via Start/Finish pattern
 
 	if err != nil {
 		b.stats.mu.Lock()
@@ -487,17 +496,27 @@ func (b *Bot) handleMessage(ctx context.Context, msg *telegram.Message) error {
 	telegramID := msg.From.ID
 	chatID := msg.Chat.ID
 
+	// DEBUG: Log all incoming messages
+	b.logger.Info("📨 INCOMING MESSAGE",
+		"telegram_id", telegramID,
+		"chat_id", chatID,
+		"text", msg.Text,
+		"from", msg.From.Username,
+	)
+
 	// Extract command
 	command := telegram.ExtractCommand(msg)
 	args := telegram.ExtractCommandArgs(msg)
 
 	// If it's a command
 	if command != "" {
+		b.logger.Info("📌 COMMAND DETECTED", "command", command, "args", args)
 		return b.handleCommand(ctx, telegramID, chatID, int(msg.MessageID), command, args, msg)
 	}
 
 	// If it's a text message (might be onboarding input)
 	if msg.Text != "" {
+		b.logger.Info("📝 TEXT MESSAGE - forwarding to handleTextMessage", "text", msg.Text)
 		return b.handleTextMessage(ctx, telegramID, chatID, msg)
 	}
 
@@ -518,8 +537,9 @@ func (b *Bot) handleCommand(
 	b.stats.mu.Unlock()
 
 	// Rate limiting
-	if allowed, waitTime := b.rateLimitMiddleware.Allow(telegramID, command); !allowed {
-		return b.sendRateLimitMessage(ctx, chatID, waitTime)
+	rateLimitResult := b.rateLimiter.Check(ctx, telegramID)
+	if !rateLimitResult.Allowed {
+		return b.sendRateLimitMessage(ctx, chatID, rateLimitResult.RetryAfter)
 	}
 
 	// Authentication
@@ -565,15 +585,27 @@ func (b *Bot) handleCommand(
 
 // handleTextMessage processes a non-command text message.
 func (b *Bot) handleTextMessage(ctx context.Context, telegramID, chatID int64, msg *telegram.Message) error {
+	b.logger.Info("🔍 handleTextMessage CALLED",
+		"telegram_id", telegramID,
+		"text", msg.Text,
+	)
+
 	// Check if user is in onboarding state (not registered)
 	authResult, err := b.authMiddleware.Authenticate(ctx, telegramID, "")
 	if err != nil {
+		b.logger.Error("❌ Auth error in handleTextMessage", "error", err)
 		return nil // Ignore errors for text messages
 	}
 
+	b.logger.Info("🔐 Auth result",
+		"is_authenticated", authResult.IsAuthenticated,
+		"should_continue", authResult.ShouldContinue,
+	)
+
 	// If user is not registered, treat as Alem login input
 	if !authResult.IsAuthenticated {
-		return b.router.HandleTextInput(ctx, TextInputContext{
+		b.logger.Info("✅ User NOT authenticated - forwarding to HandleTextInput")
+		err := b.router.HandleTextInput(ctx, TextInputContext{
 			TelegramID: telegramID,
 			ChatID:     chatID,
 			MessageID:  int(msg.MessageID),
@@ -581,10 +613,14 @@ func (b *Bot) handleTextMessage(ctx context.Context, telegramID, chatID int64, m
 			Message:    msg,
 			Client:     b.client,
 		})
+		if err != nil {
+			b.logger.Error("❌ HandleTextInput error", "error", err)
+		}
+		return err
 	}
 
 	// User is registered but sent a text message - might be a query or just chat
-	// For now, we ignore regular text messages from registered users
+	b.logger.Info("⏭️ User IS authenticated - ignoring text message")
 	return nil
 }
 
@@ -605,12 +641,13 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *telegram.CallbackQuer
 
 	// Answer callback query first (removes loading state)
 	defer func() {
-		_ = b.client.AnswerCallbackQuery(ctx, cq.ID, "", false, "", 0)
+		_ = b.client.AnswerCallbackQuery(ctx, cq.ID, "", false)
 	}()
 
 	// Rate limiting for callbacks
-	if allowed, _ := b.rateLimitMiddleware.Allow(telegramID, "callback"); !allowed {
-		_ = b.client.AnswerCallbackQuery(ctx, cq.ID, "⏳ Слишком быстро! Подожди немного.", true, "", 0)
+	rateLimitResult := b.rateLimiter.Check(ctx, telegramID)
+	if !rateLimitResult.Allowed {
+		_ = b.client.AnswerCallbackQuery(ctx, cq.ID, "⏳ Слишком быстро! Подожди немного.", true)
 		return nil
 	}
 

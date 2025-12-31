@@ -3,10 +3,10 @@
 package saga
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
@@ -451,6 +451,7 @@ func (s *AchievementFlowSaga) stepSendNotifications(ctx context.Context, state *
 		// Build notification message
 		message := s.buildAchievementMessage(achievement)
 
+		achievPriority := notification.PriorityHigh
 		achievNotification, err := notification.NewNotification(notification.NewNotificationParams{
 			ID:             notification.NotificationID(s.idGenerator.GenerateID()),
 			Type:           notification.NotificationTypeAchievement,
@@ -458,7 +459,7 @@ func (s *AchievementFlowSaga) stepSendNotifications(ctx context.Context, state *
 			TelegramChatID: notification.TelegramChatID(state.Student.TelegramID),
 			Title:          "🏅 Новое достижение!",
 			Message:        message,
-			Priority:       notification.PriorityHigh,
+			Priority:       &achievPriority,
 		})
 		if err != nil {
 			// Log but continue with other achievements
@@ -520,9 +521,10 @@ func (s *AchievementFlowSaga) stepPublishEvents(ctx context.Context, state *Achi
 	}
 
 	for _, achievement := range state.NewAchievements {
-		event := student.NewAchievementUnlockedEvent(state.Student, achievement)
+		studentEvent := student.NewAchievementUnlockedEvent(state.Student, achievement)
+		wrappedEvent := wrapAchievementEvent(state.Student.ID, studentEvent)
 
-		if err := s.eventBus.Publish(event); err != nil {
+		if err := s.eventBus.Publish(wrappedEvent); err != nil {
 			// Log but continue with other events
 			continue
 		}
@@ -823,4 +825,43 @@ func (b *AchievementFlowSagaBuilder) Build() (*AchievementFlowSaga, error) {
 		b.idGenerator,
 		b.config,
 	), nil
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EVENT ADAPTERS
+// Adapts student domain events to shared.Event interface for the event bus.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// achievementEventAdapter adapts a student.AchievementUnlockedEvent to shared.Event.
+type achievementEventAdapter struct {
+	event     student.AchievementUnlockedEvent
+	studentID string
+}
+
+// EventType implements shared.Event interface.
+func (a *achievementEventAdapter) EventType() shared.EventType {
+	return shared.EventLevelUp // Use level up event type as closest match for achievements
+}
+
+// OccurredAt implements shared.Event interface.
+func (a *achievementEventAdapter) OccurredAt() time.Time {
+	return a.event.OccurredAt()
+}
+
+// AggregateID implements shared.Event interface.
+func (a *achievementEventAdapter) AggregateID() string {
+	return a.studentID
+}
+
+// Payload implements shared.Event interface.
+func (a *achievementEventAdapter) Payload() map[string]interface{} {
+	return map[string]interface{}{
+		"achievement_type": string(a.event.Achievement.Type),
+		"xp_bonus":         int(a.event.XPBonus),
+	}
+}
+
+// wrapAchievementEvent wraps a student event to satisfy shared.Event interface.
+func wrapAchievementEvent(studentID string, event student.AchievementUnlockedEvent) shared.Event {
+	return &achievementEventAdapter{event: event, studentID: studentID}
 }

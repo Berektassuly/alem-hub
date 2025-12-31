@@ -2,11 +2,11 @@
 package eventhandler
 
 import (
-	"alem-hub/internal/domain/activity"
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/social"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
@@ -368,14 +368,15 @@ func (h *OnTaskCompletedHandler) sendMilestoneNotification(
 			emoji, milestone)
 	}
 
-	notif, err := notification.NewNotification(
-		notification.NotificationID(generateID()),
-		notification.NotificationTypeAchievement,
-		notification.RecipientID(studentEntity.ID),
-		notification.TelegramChatID(studentEntity.TelegramID),
-		message,
-		notification.PriorityHigh,
-	)
+	priority := notification.PriorityHigh
+	notif, err := notification.NewNotification(notification.NewNotificationParams{
+		ID:             notification.NotificationID(generateID()),
+		Type:           notification.NotificationTypeAchievement,
+		RecipientID:    notification.RecipientID(studentEntity.ID),
+		TelegramChatID: notification.TelegramChatID(studentEntity.TelegramID),
+		Message:        message,
+		Priority:       &priority,
+	})
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}
@@ -403,10 +404,11 @@ func (h *OnTaskCompletedHandler) recordMilestoneAchievement(
 
 	achievementType := student.AchievementType(fmt.Sprintf("tasks_%d", milestone))
 	achievement := student.Achievement{
-		Type:        achievementType,
-		Name:        fmt.Sprintf("%d задач", milestone),
-		Description: fmt.Sprintf("Выполнено %d задач", milestone),
-		UnlockedAt:  time.Now(),
+		Type:       achievementType,
+		UnlockedAt: time.Now(),
+		Metadata: map[string]interface{}{
+			"milestone_value": milestone,
+		},
 	}
 
 	return h.progressRepo.SaveAchievement(ctx, studentID, achievement)
@@ -463,7 +465,10 @@ func (h *OnTaskCompletedHandler) updateHelperStats(
 	}
 
 	// Увеличиваем счётчик помощей
-	profile.IncrementHelpCount()
+	profile.TotalHelpGiven++
+	now := time.Now()
+	profile.LastHelpAt = &now
+	profile.UpdatedAt = now
 
 	if err := h.socialRepo.SocialProfiles().Update(ctx, profile); err != nil {
 		return fmt.Errorf("update social profile: %w", err)
@@ -500,18 +505,22 @@ func (h *OnTaskCompletedHandler) ensureConnection(
 			return fmt.Errorf("get connection: %w", err)
 		}
 
-		conn.RecordInteraction("task_help", taskID)
+		conn.RecordInteraction(0) // Record interaction without specific time
+		conn.RecordTaskSolved()   // Record that a task was solved together
 		if err := connRepo.Update(ctx, conn); err != nil {
 			return fmt.Errorf("update connection: %w", err)
 		}
 	} else {
 		// Создаём новую связь типа "helper"
-		conn, err := social.NewConnection(
-			generateID(),
-			social.StudentID(helperID), // Инициатор — помощник
-			social.StudentID(studentID),
-			social.ConnectionTypeHelper,
-		)
+		conn, err := social.NewConnection(social.NewConnectionParams{
+			ID:          generateID(),
+			InitiatorID: social.StudentID(helperID), // Инициатор — помощник
+			ReceiverID:  social.StudentID(studentID),
+			Type:        social.ConnectionTypeHelper,
+			Context: social.ConnectionContext{
+				TaskID: social.TaskID(taskID),
+			},
+		})
 		if err != nil {
 			return fmt.Errorf("create connection: %w", err)
 		}
@@ -557,14 +566,15 @@ func (h *OnTaskCompletedHandler) notifyHelperOnSuccess(
 	message := fmt.Sprintf("%s %s решил задачу %s с твоей помощью! Спасибо, что помогаешь сообществу!",
 		emoji, studentEntity.DisplayName, event.TaskID)
 
-	notif, err := notification.NewNotification(
-		notification.NotificationID(generateID()),
-		notification.NotificationTypeEndorsementReceived,
-		notification.RecipientID(helper.ID),
-		notification.TelegramChatID(helper.TelegramID),
-		message,
-		notification.PriorityLow,
-	)
+	helperPriority := notification.PriorityLow
+	notif, err := notification.NewNotification(notification.NewNotificationParams{
+		ID:             notification.NotificationID(generateID()),
+		Type:           notification.NotificationTypeEndorsementReceived,
+		RecipientID:    notification.RecipientID(helper.ID),
+		TelegramChatID: notification.TelegramChatID(helper.TelegramID),
+		Message:        message,
+		Priority:       &helperPriority,
+	})
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}
@@ -600,14 +610,15 @@ func (h *OnTaskCompletedHandler) sendCompletionConfirmation(
 		message += " 🔥 Отличный результат!"
 	}
 
-	notif, err := notification.NewNotification(
-		notification.NotificationID(generateID()),
-		notification.NotificationTypeTaskCompleted,
-		notification.RecipientID(studentEntity.ID),
-		notification.TelegramChatID(studentEntity.TelegramID),
-		message,
-		notification.PriorityLow, // Низкий приоритет — информационное уведомление
-	)
+	confirmPriority := notification.PriorityLow // Низкий приоритет — информационное уведомление
+	notif, err := notification.NewNotification(notification.NewNotificationParams{
+		ID:             notification.NotificationID(generateID()),
+		Type:           notification.NotificationTypeTaskCompleted,
+		RecipientID:    notification.RecipientID(studentEntity.ID),
+		TelegramChatID: notification.TelegramChatID(studentEntity.TelegramID),
+		Message:        message,
+		Priority:       &confirmPriority,
+	})
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}

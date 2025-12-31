@@ -2,9 +2,9 @@
 package telegram
 
 import (
-	"alem-hub/internal/infrastructure/external/telegram"
-	"alem-hub/internal/interface/telegram/handler"
-	"alem-hub/internal/interface/telegram/presenter"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/telegram"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/handler"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"fmt"
 	"log/slog"
@@ -372,8 +372,9 @@ func (r *Router) handleTopCommand(ctx context.Context, h *handler.TopHandler, cm
 		TelegramID: cmdCtx.TelegramID,
 		ChatID:     cmdCtx.ChatID,
 		MessageID:  cmdCtx.MessageID,
-		Page:       1,
-		OnlyOnline: false,
+		Cohort:     "",
+		Limit:      10,
+		IsRefresh:  false,
 	}
 
 	resp, err := h.Handle(ctx, req)
@@ -489,7 +490,8 @@ func (r *Router) HandleCommandWithEdit(ctx context.Context, command string, cmdC
 	}
 
 	// Special handling for editing vs sending
-	switch handler := h.(type) {
+	// Note: We use 'hnd' as the variable name to avoid shadowing the 'handler' package import
+	switch hnd := h.(type) {
 	case *handler.MeHandler:
 		req := handler.MeRequest{
 			TelegramID: cmdCtx.TelegramID,
@@ -497,7 +499,7 @@ func (r *Router) HandleCommandWithEdit(ctx context.Context, command string, cmdC
 			MessageID:  cmdCtx.MessageID,
 			IsRefresh:  true,
 		}
-		resp, err := handler.Handle(ctx, req)
+		resp, err := hnd.Handle(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -508,9 +510,10 @@ func (r *Router) HandleCommandWithEdit(ctx context.Context, command string, cmdC
 			TelegramID: cmdCtx.TelegramID,
 			ChatID:     cmdCtx.ChatID,
 			MessageID:  cmdCtx.MessageID,
-			Page:       1,
+			Limit:      10,
+			IsRefresh:  true,
 		}
-		resp, err := handler.Handle(ctx, req)
+		resp, err := hnd.Handle(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -522,7 +525,7 @@ func (r *Router) HandleCommandWithEdit(ctx context.Context, command string, cmdC
 			ChatID:     cmdCtx.ChatID,
 			MessageID:  cmdCtx.MessageID,
 		}
-		resp, err := handler.Handle(ctx, req)
+		resp, err := hnd.Handle(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -534,7 +537,7 @@ func (r *Router) HandleCommandWithEdit(ctx context.Context, command string, cmdC
 			ChatID:     cmdCtx.ChatID,
 			MessageID:  cmdCtx.MessageID,
 		}
-		resp, err := handler.Handle(ctx, req)
+		resp, err := hnd.Handle(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -546,7 +549,7 @@ func (r *Router) HandleCommandWithEdit(ctx context.Context, command string, cmdC
 			ChatID:     cmdCtx.ChatID,
 			MessageID:  cmdCtx.MessageID,
 		}
-		resp, err := handler.Handle(ctx, req)
+		resp, err := hnd.Handle(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -581,41 +584,37 @@ func (r *Router) createRefreshCallbackHandler() func(ctx context.Context, cbCtx 
 // createTopCallbackHandler creates a handler for "top:" callbacks (pagination, filtering).
 func (r *Router) createTopCallbackHandler(topHandler *handler.TopHandler) func(ctx context.Context, cbCtx CallbackContext) error {
 	return func(ctx context.Context, cbCtx CallbackContext) error {
-		// Parse callback data: "top:page:2:cohort:true" or "top:filter:1:cohort:false"
+		// Parse callback data: "top:page:2:cohort" or "top:filter:10:cohort"
 		parts := strings.Split(cbCtx.Data, ":")
 		if len(parts) < 2 {
 			return nil
 		}
 
 		action := parts[1]
-		page := 1
+		limit := 10
 		cohort := ""
-		onlyOnline := false
 
 		switch action {
 		case "page", "refresh", "filter":
 			if len(parts) >= 3 {
-				page, _ = strconv.Atoi(parts[2])
+				limit, _ = strconv.Atoi(parts[2])
 			}
 			if len(parts) >= 4 {
 				cohort = parts[3]
 			}
-			if len(parts) >= 5 {
-				onlyOnline = parts[4] == "true"
-			}
 		}
 
-		if page < 1 {
-			page = 1
+		if limit < 1 {
+			limit = 10
 		}
 
 		req := handler.TopRequest{
 			TelegramID: cbCtx.TelegramID,
 			ChatID:     cbCtx.ChatID,
 			MessageID:  cbCtx.MessageID,
-			Page:       page,
+			Limit:      limit,
 			Cohort:     cohort,
-			OnlyOnline: onlyOnline,
+			IsRefresh:  true,
 		}
 
 		resp, err := topHandler.Handle(ctx, req)
@@ -673,38 +672,51 @@ func (r *Router) createSettingsCallbackHandler(settingsHandler *handler.Settings
 		}
 
 		action := parts[1]
-
-		req := handler.SettingsRequest{
-			TelegramID: cbCtx.TelegramID,
-			ChatID:     cbCtx.ChatID,
-			MessageID:  cbCtx.MessageID,
-		}
+		var resp *handler.SettingsResponse
+		var err error
 
 		switch action {
 		case "toggle":
 			if len(parts) >= 3 {
-				req.Action = "toggle"
-				req.ToggleKey = parts[2]
+				setting := parts[2]
+				resp, err = settingsHandler.ToggleSetting(ctx, cbCtx.TelegramID, setting)
 			}
 		case "quiet":
 			if len(parts) >= 4 {
-				req.Action = "quiet_hours"
-				req.QuietStart, _ = strconv.Atoi(parts[2])
-				req.QuietEnd, _ = strconv.Atoi(parts[3])
+				startHour, _ := strconv.Atoi(parts[2])
+				endHour, _ := strconv.Atoi(parts[3])
+				resp, err = settingsHandler.SetQuietHours(ctx, cbCtx.TelegramID, startHour, endHour)
 			}
-		case "quiet_hours":
-			req.Action = "show_quiet_hours"
+		case "quiet_hours", "refresh":
+			// Just show current settings
+			req := handler.SettingsRequest{
+				TelegramID: cbCtx.TelegramID,
+				ChatID:     cbCtx.ChatID,
+				MessageID:  cbCtx.MessageID,
+				IsRefresh:  true,
+			}
+			resp, err = settingsHandler.Handle(ctx, req)
 		case "enable_all":
-			req.Action = "enable_all"
+			resp, err = settingsHandler.EnableAllNotifications(ctx, cbCtx.TelegramID)
 		case "disable_all":
-			req.Action = "disable_all"
+			resp, err = settingsHandler.DisableAllNotifications(ctx, cbCtx.TelegramID)
 		case "reset":
-			req.Action = "reset"
+			resp, err = settingsHandler.ResetSettings(ctx, cbCtx.TelegramID)
+		default:
+			// Default: show settings
+			req := handler.SettingsRequest{
+				TelegramID: cbCtx.TelegramID,
+				ChatID:     cbCtx.ChatID,
+				MessageID:  cbCtx.MessageID,
+			}
+			resp, err = settingsHandler.Handle(ctx, req)
 		}
 
-		resp, err := settingsHandler.Handle(ctx, req)
 		if err != nil {
 			return err
+		}
+		if resp == nil {
+			return nil
 		}
 
 		return r.editResponse(ctx, cbCtx.Client, cbCtx.ChatID, cbCtx.MessageID, resp.Text, resp.ParseMode, resp.Keyboard)

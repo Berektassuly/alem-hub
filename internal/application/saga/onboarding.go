@@ -4,10 +4,10 @@
 package saga
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
@@ -31,7 +31,13 @@ type OnboardingInput struct {
 	// TelegramUsername - Telegram username (optional, for display).
 	TelegramUsername string
 
-	// AlemLogin - login on Alem platform (required).
+	// Email - email for authentication (required for auth flow).
+	Email string
+
+	// Password - password for authentication (required for auth flow).
+	Password string
+
+	// AlemLogin - login on Alem platform (deprecated, use Email+Password).
 	AlemLogin string
 
 	// Cohort - student's cohort/batch (optional, can be auto-detected).
@@ -43,11 +49,12 @@ func (i OnboardingInput) Validate() error {
 	if i.TelegramID <= 0 {
 		return errors.New("onboarding: telegram ID must be positive")
 	}
-	if i.AlemLogin == "" {
-		return errors.New("onboarding: alem login is required")
+	// Either email+password (new flow) or alem login (legacy flow)
+	if i.Email == "" && i.AlemLogin == "" {
+		return errors.New("onboarding: email or alem login is required")
 	}
-	if len(i.AlemLogin) < 2 || len(i.AlemLogin) > 50 {
-		return errors.New("onboarding: alem login must be 2-50 characters")
+	if i.Email != "" && i.Password == "" {
+		return errors.New("onboarding: password is required when using email")
 	}
 	return nil
 }
@@ -114,6 +121,10 @@ type AlemAPIClient interface {
 
 	// ValidateLogin checks if the login exists on Alem platform.
 	ValidateLogin(ctx context.Context, login string) (bool, error)
+
+	// Authenticate authenticates a user with email and password.
+	// Returns student data on success.
+	Authenticate(ctx context.Context, email, password string) (*AlemStudentData, error)
 }
 
 // IDGenerator generates unique identifiers.
@@ -313,6 +324,29 @@ func (s *OnboardingSaga) stepCheckExistence(ctx context.Context, state *Onboardi
 
 // stepFetchFromAlem retrieves student data from Alem platform.
 func (s *OnboardingSaga) stepFetchFromAlem(ctx context.Context, state *OnboardingState) error {
+	// New flow: authenticate with email+password
+	if state.Input.Email != "" && state.Input.Password != "" {
+		alemData, err := s.alemClient.Authenticate(ctx, state.Input.Email, state.Input.Password)
+		if err != nil {
+			state.FailedStep = StepFetchFromAlem
+			// Check if it's an authentication error
+			if isAuthError(err) {
+				state.Error = ErrInvalidCredentials
+			} else {
+				state.Error = fmt.Errorf("failed to authenticate: %w", err)
+			}
+			return state.Error
+		}
+
+		state.AlemData = alemData
+		// Store the login from authenticated data
+		if state.Input.AlemLogin == "" && alemData.Login != "" {
+			state.Input.AlemLogin = alemData.Login
+		}
+		return nil
+	}
+
+	// Legacy flow: validate login and fetch data
 	// First, validate that the login exists on Alem
 	valid, err := s.alemClient.ValidateLogin(ctx, state.Input.AlemLogin)
 	if err != nil {
@@ -336,6 +370,54 @@ func (s *OnboardingSaga) stepFetchFromAlem(ctx context.Context, state *Onboardin
 
 	state.AlemData = alemData
 	return nil
+}
+
+// isAuthError checks if the error is an authentication error.
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return containsAny(errStr, []string{
+		"401", "unauthorized", "invalid credentials",
+		"wrong password", "authentication failed",
+	})
+}
+
+// containsAny checks if s contains any of the substrings (case insensitive).
+func containsAny(s string, substrings []string) bool {
+	sLower := toLower(s)
+	for _, sub := range substrings {
+		if contains(sLower, toLower(sub)) {
+			return true
+		}
+	}
+	return false
+}
+
+func toLower(s string) string {
+	b := make([]byte, len(s))
+	for i := range s {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && findSubstr(s, substr) >= 0
+}
+
+func findSubstr(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }
 
 // stepCreateStudent creates the student entity and persists it.
@@ -417,6 +499,7 @@ func (s *OnboardingSaga) stepInitializeProgress(ctx context.Context, state *Onbo
 
 // stepSendWelcome sends a welcome notification to the new student.
 func (s *OnboardingSaga) stepSendWelcome(ctx context.Context, state *OnboardingState) (string, error) {
+	welcomePriority := notification.PriorityHigh
 	welcomeNotification, err := notification.NewNotification(notification.NewNotificationParams{
 		ID:             notification.NotificationID(s.idGenerator.GenerateID()),
 		Type:           notification.NotificationTypeWelcome,
@@ -424,7 +507,7 @@ func (s *OnboardingSaga) stepSendWelcome(ctx context.Context, state *OnboardingS
 		TelegramChatID: notification.TelegramChatID(state.Input.TelegramID),
 		Title:          "👋 Добро пожаловать в Alem Community Hub!",
 		Message:        s.buildWelcomeMessage(state),
-		Priority:       notification.PriorityHigh,
+		Priority:       &welcomePriority,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create welcome notification: %w", err)
@@ -572,6 +655,9 @@ var (
 
 	// ErrAlemLoginNotFound - Alem login does not exist on the platform.
 	ErrAlemLoginNotFound = errors.New("onboarding: alem login not found on platform")
+
+	// ErrInvalidCredentials - invalid email or password.
+	ErrInvalidCredentials = errors.New("onboarding: invalid credentials")
 
 	// ErrOnboardingTimeout - onboarding process timed out.
 	ErrOnboardingTimeout = errors.New("onboarding: process timed out")

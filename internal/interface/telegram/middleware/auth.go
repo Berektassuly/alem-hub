@@ -4,8 +4,8 @@
 package middleware
 
 import (
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"sync"
@@ -61,6 +61,7 @@ func DefaultAuthConfig() AuthConfig {
 		PublicCommands: map[string]bool{
 			"/start": true,
 			"start":  true,
+			"":       true, // Text messages during onboarding
 		},
 		CacheTTL: 5 * time.Minute,
 		OnUnauthorized: func(telegramID int64) string {

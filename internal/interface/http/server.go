@@ -4,9 +4,9 @@
 package http
 
 import (
-	"alem-hub/internal/application/query"
-	"alem-hub/internal/interface/http/handlers"
-	"alem-hub/pkg/logger"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/interface/http/handlers"
+	"github.com/alem-hub/alem-community-hub/pkg/logger"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -108,7 +108,7 @@ type Dependencies struct {
 	FindHelpersHandler      *query.FindHelpersHandler
 
 	// Logger
-	Logger logger.Logger
+	Logger *logger.Logger
 
 	// Health Check Dependencies
 	HealthChecker handlers.HealthChecker
@@ -127,7 +127,7 @@ type Server struct {
 	deps       Dependencies
 	httpServer *http.Server
 	router     *http.ServeMux
-	logger     logger.Logger
+	logger     *logger.Logger
 
 	// Middleware state
 	rateLimiter *rateLimiter
@@ -148,7 +148,7 @@ func NewServer(config Config, deps Dependencies) *Server {
 	}
 
 	if s.logger == nil {
-		s.logger = logger.NewNoop()
+		s.logger = logger.Default()
 	}
 
 	// Initialize rate limiter
@@ -271,13 +271,13 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		duration := time.Since(start)
 
 		s.logger.Info("http request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", rw.statusCode,
-			"duration_ms", duration.Milliseconds(),
-			"ip", getClientIP(r),
-			"user_agent", r.UserAgent(),
-			"request_id", getRequestID(r.Context()),
+			logger.String("method", r.Method),
+			logger.String("path", r.URL.Path),
+			logger.Int("status", rw.statusCode),
+			logger.Int64("duration_ms", duration.Milliseconds()),
+			logger.String("ip", getClientIP(r)),
+			logger.String("user_agent", r.UserAgent()),
+			logger.String("request_id", getRequestID(r.Context())),
 		)
 	})
 }
@@ -289,10 +289,10 @@ func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
 			if err := recover(); err != nil {
 				stack := debug.Stack()
 				s.logger.Error("panic recovered",
-					"error", err,
-					"stack", string(stack),
-					"path", r.URL.Path,
-					"request_id", getRequestID(r.Context()),
+					logger.Any("error", err),
+					logger.String("stack", string(stack)),
+					logger.String("path", r.URL.Path),
+					logger.String("request_id", getRequestID(r.Context())),
 				)
 				writeJSONError(w, http.StatusInternalServerError, "internal_server_error", "An unexpected error occurred")
 			}
@@ -362,7 +362,7 @@ func (s *Server) Start() error {
 	s.startedAt = time.Now()
 	s.mu.Unlock()
 
-	s.logger.Info("starting HTTP server", "address", s.config.Address())
+	s.logger.Info("starting HTTP server", logger.String("address", s.config.Address()))
 
 	err := s.httpServer.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {

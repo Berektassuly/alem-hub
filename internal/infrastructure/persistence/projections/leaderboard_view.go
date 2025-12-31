@@ -7,7 +7,7 @@
 package projections
 
 import (
-	"alem-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
 	"context"
 	"fmt"
 	"sort"

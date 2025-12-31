@@ -3,15 +3,46 @@
 package handler
 
 import (
-	"alem-hub/internal/application/saga"
-	"alem-hub/internal/domain/student"
-	"alem-hub/internal/interface/telegram/presenter"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/application/saga"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 )
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING STATE
+// Tracks the two-step onboarding flow: email → password
+// ══════════════════════════════════════════════════════════════════════════════
+
+// OnboardingStep represents the current step in onboarding.
+type OnboardingStep int
+
+const (
+	StepWaitingForEmail OnboardingStep = iota
+	StepWaitingForPassword
+)
+
+// PendingOnboarding represents an in-progress onboarding session.
+type PendingOnboarding struct {
+	Email     string
+	Step      OnboardingStep
+	CreatedAt time.Time
+}
+
+// pendingOnboardings stores in-progress onboarding sessions.
+// Key is TelegramID.
+var pendingOnboardings = struct {
+	sync.RWMutex
+	data map[int64]*PendingOnboarding
+}{data: make(map[int64]*PendingOnboarding)}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // START HANDLER
@@ -135,6 +166,14 @@ func (h *StartHandler) handleAskForLogin(ctx context.Context, req StartRequest) 
 		greeting = req.FirstName
 	}
 
+	// Start new onboarding session - waiting for email
+	pendingOnboardings.Lock()
+	pendingOnboardings.data[req.TelegramID] = &PendingOnboarding{
+		Step:      StepWaitingForEmail,
+		CreatedAt: time.Now(),
+	}
+	pendingOnboardings.Unlock()
+
 	text := fmt.Sprintf(
 		"Привет, %s! 👋\n\n"+
 			"Добро пожаловать в <b>Alem Community Hub</b> — неофициальное сообщество студентов Alem School.\n\n"+
@@ -142,10 +181,8 @@ func (h *StartHandler) handleAskForLogin(ctx context.Context, req StartRequest) 
 			"Это место, где лидерборд — не про соревнование, а про взаимопомощь. "+
 			"Здесь ты можешь найти тех, кто решил задачу, на которой ты застрял, "+
 			"и помочь другим в ответ.\n\n"+
-			"📝 <b>Для регистрации отправь свой логин Alem:</b>\n"+
-			"Просто напиши его в чат (например: <code>ivanov_i</code>)\n\n"+
-			"<i>Или используй ссылку:</i>\n"+
-			"<code>https://t.me/AlemHubBot?start=твой_логин</code>",
+			"📝 <b>Для регистрации введи email от alem.school:</b>\n"+
+			"Просто напиши его в чат (например: <code>student@alem.school</code>)",
 		greeting,
 	)
 
@@ -300,7 +337,7 @@ func (h *StartHandler) handleOnboardingSuccess(result *saga.OnboardingResult) (*
 	}, nil
 }
 
-// HandleTextMessage handles text messages (Alem login input during onboarding).
+// HandleTextMessage handles text messages (email/password input during onboarding).
 func (h *StartHandler) HandleTextMessage(ctx context.Context, req StartRequest, text string) (*StartResponse, error) {
 	// Check if already registered
 	existingStudent, err := h.studentRepo.GetByTelegramID(ctx, student.TelegramID(req.TelegramID))
@@ -314,14 +351,207 @@ func (h *StartHandler) HandleTextMessage(ctx context.Context, req StartRequest, 
 		}, nil
 	}
 
-	// Treat text as Alem login attempt
-	req.DeepLinkParam = text
-	return h.handleOnboarding(ctx, req)
+	// Check for pending onboarding session
+	pendingOnboardings.Lock()
+	pending, exists := pendingOnboardings.data[req.TelegramID]
+
+	// Clean up expired sessions (older than 10 minutes)
+	if exists && time.Since(pending.CreatedAt) > 10*time.Minute {
+		delete(pendingOnboardings.data, req.TelegramID)
+		exists = false
+		pending = nil
+	}
+	pendingOnboardings.Unlock()
+
+	if !exists {
+		// No pending session - start new one by asking for email
+		return h.handleAskForLogin(ctx, req)
+	}
+
+	text = strings.TrimSpace(text)
+
+	switch pending.Step {
+	case StepWaitingForEmail:
+		// User sent email - validate and ask for password
+		if !isValidEmail(text) {
+			return &StartResponse{
+				Text: "❌ <b>Некорректный email</b>\n\n" +
+					"Пожалуйста, введи корректный email от alem.school\n" +
+					"Например: <code>student@alem.school</code>",
+				ParseMode: "HTML",
+				IsError:   true,
+			}, nil
+		}
+
+		// Store email and move to password step
+		pendingOnboardings.Lock()
+		pendingOnboardings.data[req.TelegramID] = &PendingOnboarding{
+			Email:     text,
+			Step:      StepWaitingForPassword,
+			CreatedAt: time.Now(),
+		}
+		pendingOnboardings.Unlock()
+
+		return &StartResponse{
+			Text: fmt.Sprintf(
+				"📧 Email: <code>%s</code>\n\n"+
+					"🔐 <b>Теперь введи пароль от alem.school:</b>\n\n"+
+					"<i>Пароль будет использован только для авторизации и не сохраняется.</i>",
+				escapeHTML(text),
+			),
+			ParseMode: "HTML",
+			IsError:   false,
+		}, nil
+
+	case StepWaitingForPassword:
+		// User sent password - try to authenticate
+		email := pending.Email
+
+		// Clear pending state
+		pendingOnboardings.Lock()
+		delete(pendingOnboardings.data, req.TelegramID)
+		pendingOnboardings.Unlock()
+
+		// Try to authenticate
+		return h.handleAuthentication(ctx, req, email, text)
+	}
+
+	// Unknown state - restart
+	return h.handleAskForLogin(ctx, req)
+}
+
+// handleAuthentication handles the authentication step.
+// Simplified flow: save directly to database without external API calls.
+func (h *StartHandler) handleAuthentication(ctx context.Context, req StartRequest, email, password string) (*StartResponse, error) {
+	// Extract login from email (part before @)
+	login := email
+	if atIdx := strings.Index(email, "@"); atIdx > 0 {
+		login = email[:atIdx]
+	}
+
+	// Check if this telegram user is already registered
+	exists, err := h.studentRepo.ExistsByTelegramID(ctx, student.TelegramID(req.TelegramID))
+	if err != nil {
+		return &StartResponse{
+			Text: "❌ <b>Ошибка базы данных</b>\n\n" +
+				"Попробуй позже.",
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+	if exists {
+		return &StartResponse{
+			Text: "⚠️ <b>Ты уже зарегистрирован!</b>\n\n" +
+				"Используй /me чтобы посмотреть свой профиль.",
+			ParseMode: "HTML",
+			IsError:   false,
+		}, nil
+	}
+
+	// Check if this email/login is already used
+	existsByLogin, err := h.studentRepo.ExistsByAlemLogin(ctx, student.AlemLogin(login))
+	if err != nil {
+		return &StartResponse{
+			Text: "❌ <b>Ошибка базы данных</b>\n\n" +
+				"Попробуй позже.",
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+	if existsByLogin {
+		return &StartResponse{
+			Text: fmt.Sprintf(
+				"⚠️ <b>Email уже используется</b>\n\n"+
+					"Email <code>%s</code> уже связан с другим аккаунтом.",
+				escapeHTML(email),
+			),
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+
+	// Generate display name
+	displayName := login
+	if req.FirstName != "" {
+		displayName = req.FirstName
+		if req.LastName != "" {
+			displayName += " " + req.LastName
+		}
+	} else if req.TelegramUsername != "" {
+		displayName = req.TelegramUsername
+	}
+
+	// Create student entity
+	newStudent, err := student.NewStudent(student.NewStudentParams{
+		ID:          generateUUID(),
+		TelegramID:  student.TelegramID(req.TelegramID),
+		AlemLogin:   student.AlemLogin(login),
+		DisplayName: displayName,
+		Cohort:      student.Cohort("2024-default"),
+		InitialXP:   0,
+	})
+	if err != nil {
+		return &StartResponse{
+			Text: fmt.Sprintf("❌ <b>Ошибка создания профиля</b>\n\n%v", err),
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+
+	// Save to database
+	if err := h.studentRepo.Create(ctx, newStudent); err != nil {
+		return &StartResponse{
+			Text: "❌ <b>Ошибка сохранения</b>\n\n" +
+				"Не удалось сохранить данные. Попробуй позже.",
+			ParseMode: "HTML",
+			IsError:   true,
+		}, nil
+	}
+
+	// Success!
+	return &StartResponse{
+		Text: fmt.Sprintf(
+			"🎉 <b>Регистрация успешна!</b>\n\n"+
+				"📧 Email: <code>%s</code>\n"+
+				"👤 Имя: <b>%s</b>\n\n"+
+				"Твои данные сохранены. Теперь ты можешь использовать:\n"+
+				"• /me — твой профиль\n"+
+				"• /top — лидерборд\n\n"+
+				"Удачи! 🚀",
+			escapeHTML(email),
+			escapeHTML(displayName),
+		),
+		ParseMode: "HTML",
+		IsError:   false,
+	}, nil
+}
+
+// isValidEmail checks if the string is a valid email.
+func isValidEmail(email string) bool {
+	// Simple email validation
+	if len(email) < 5 || len(email) > 100 {
+		return false
+	}
+	atIdx := strings.Index(email, "@")
+	if atIdx < 1 || atIdx > len(email)-3 {
+		return false
+	}
+	dotIdx := strings.LastIndex(email, ".")
+	return dotIdx > atIdx+1 && dotIdx < len(email)-1
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ══════════════════════════════════════════════════════════════════════════════
+
+// generateUUID generates a simple UUID v4.
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
 
 // alemLoginRegex matches valid Alem logins.
 var alemLoginRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{2,50}$`)

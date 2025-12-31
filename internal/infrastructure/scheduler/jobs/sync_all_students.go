@@ -4,8 +4,8 @@
 package jobs
 
 import (
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
@@ -346,7 +346,6 @@ func (j *SyncAllStudentsJob) syncStudent(
 
 		// Save XP history
 		xpEntry := student.XPHistoryEntry{
-			StudentID: s.ID,
 			Timestamp: time.Now(),
 			OldXP:     student.XP(oldXP),
 			NewXP:     newXP,

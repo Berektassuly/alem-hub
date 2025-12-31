@@ -2,9 +2,9 @@
 package query
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"time"
@@ -139,6 +139,16 @@ type StudentRankDTO struct {
 
 	// Cohort - когорта студента.
 	Cohort string `json:"cohort"`
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Социальные данные
+	// ─────────────────────────────────────────────────────────────────────────
+
+	// IsAvailableForHelp - готов ли студент помогать другим.
+	IsAvailableForHelp bool `json:"is_available_for_help"`
+
+	// HelpRating - рейтинг как помощника (0-5).
+	HelpRating float64 `json:"help_rating"`
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// История (опционально)

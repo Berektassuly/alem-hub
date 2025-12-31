@@ -2,8 +2,8 @@
 package postgres
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"time"

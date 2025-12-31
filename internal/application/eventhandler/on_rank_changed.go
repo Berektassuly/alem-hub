@@ -8,10 +8,10 @@
 package eventhandler
 
 import (
-	"alem-hub/internal/domain/leaderboard"
-	"alem-hub/internal/domain/notification"
-	"alem-hub/internal/domain/shared"
-	"alem-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
@@ -233,14 +233,14 @@ func (h *OnRankChangedHandler) sendNotification(
 	}
 
 	// Создаём уведомление
-	notif, err := notification.NewNotification(
-		notification.NotificationID(generateID()),
-		notificationType,
-		notification.RecipientID(studentEntity.ID),
-		notification.TelegramChatID(studentEntity.TelegramID),
-		message,
-		priority,
-	)
+	notif, err := notification.NewNotification(notification.NewNotificationParams{
+		ID:             notification.NotificationID(generateID()),
+		Type:           notificationType,
+		RecipientID:    notification.RecipientID(studentEntity.ID),
+		TelegramChatID: notification.TelegramChatID(studentEntity.TelegramID),
+		Message:        message,
+		Priority:       &priority,
+	})
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}
@@ -355,14 +355,15 @@ func (h *OnRankChangedHandler) sendTopEnteredNotification(
 	message := fmt.Sprintf("%s Поздравляем! Ты вошёл в топ-%d! Позиция #%d. Твои усилия оценены сообществом!",
 		emoji, topN, newRank)
 
-	notif, err := notification.NewNotification(
-		notification.NotificationID(generateID()),
-		notification.NotificationTypeEnteredTop,
-		notification.RecipientID(studentEntity.ID),
-		notification.TelegramChatID(studentEntity.TelegramID),
-		message,
-		notification.PriorityHigh, // Высокий приоритет — это важное достижение
-	)
+	priority := notification.PriorityHigh // Высокий приоритет — это важное достижение
+	notif, err := notification.NewNotification(notification.NewNotificationParams{
+		ID:             notification.NotificationID(generateID()),
+		Type:           notification.NotificationTypeEnteredTop,
+		RecipientID:    notification.RecipientID(studentEntity.ID),
+		TelegramChatID: notification.TelegramChatID(studentEntity.TelegramID),
+		Message:        message,
+		Priority:       &priority,
+	})
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}
@@ -390,14 +391,15 @@ func (h *OnRankChangedHandler) sendTopLeftNotification(
 	message := fmt.Sprintf("%s Ты покинул топ-%d (сейчас #%d). Совсем немного усилий — и ты снова там! Попробуй /help для поддержки.",
 		emoji, topN, newRank)
 
-	notif, err := notification.NewNotification(
-		notification.NotificationID(generateID()),
-		notification.NotificationTypeLeftTop,
-		notification.RecipientID(studentEntity.ID),
-		notification.TelegramChatID(studentEntity.TelegramID),
-		message,
-		notification.PriorityLow, // Низкий приоритет — не расстраивать
-	)
+	priority := notification.PriorityLow // Низкий приоритет — не расстраивать
+	notif, err := notification.NewNotification(notification.NewNotificationParams{
+		ID:             notification.NotificationID(generateID()),
+		Type:           notification.NotificationTypeLeftTop,
+		RecipientID:    notification.RecipientID(studentEntity.ID),
+		TelegramChatID: notification.TelegramChatID(studentEntity.TelegramID),
+		Message:        message,
+		Priority:       &priority,
+	})
 	if err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}
