@@ -72,6 +72,10 @@ type Config struct {
 	BootcampID string
 	CohortID   string
 
+	// Service Account for Alem API (for testing)
+	AlemServiceEmail    string
+	AlemServicePassword string
+
 	// Graceful Shutdown
 	ShutdownTimeout time.Duration
 }
@@ -98,6 +102,8 @@ func LoadConfig() (*Config, error) {
 		InactivityThresholdDays: getEnvInt("INACTIVITY_THRESHOLD_DAYS", 3),
 		BootcampID:              getEnv("ALEM_BOOTCAMP_ID", "7ed99bd0-87b2-4dbb-a97b-596c3f29c49b"),
 		CohortID:                getEnv("ALEM_COHORT_ID", "005ed731-6eb5-47df-8268-7011aeb3e4bf"),
+		AlemServiceEmail:        getEnv("ALEM_SERVICE_EMAIL", ""),
+		AlemServicePassword:     getEnv("ALEM_SERVICE_PASSWORD", ""),
 		ShutdownTimeout:         getEnvDuration("SHUTDOWN_TIMEOUT", 60*time.Second),
 	}
 
@@ -250,8 +256,21 @@ func run(ctx context.Context) error {
 	alemConfig.Logger = log
 	alemClient := alem.NewClient(alemConfig)
 
-	// Suppress unused variable warning
-	_ = alemClient
+	// Authenticate with Alem Platform if credentials provided
+	if cfg.AlemServiceEmail != "" && cfg.AlemServicePassword != "" {
+		log.Info("authenticating with Alem Platform...", "email", cfg.AlemServiceEmail)
+		authResult, err := alemClient.Authenticate(ctx, cfg.AlemServiceEmail, cfg.AlemServicePassword)
+		if err != nil {
+			log.Error("failed to authenticate with Alem Platform", "error", err)
+			// Continue without auth - sync will skip bootcamp data
+		} else {
+			log.Info("authenticated with Alem Platform successfully",
+				"has_token", authResult.Token != nil && authResult.Token.AccessToken != "",
+			)
+		}
+	} else {
+		log.Warn("Alem Platform credentials not provided, bootcamp sync will be limited")
+	}
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 9. ИНИЦИАЛИЗАЦИЯ SCHEDULER И ЗАПУСК JOBS

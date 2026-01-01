@@ -6,6 +6,7 @@ package alem
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,41 +113,65 @@ type AuthResult struct {
 	Student *StudentDTO
 }
 
-// Authenticate authenticates a user with email/username and password.
-// Returns the token and student data on success.
+// Authenticate authenticates a user with email and password using Basic Authentication.
+// The Alem platform uses Basic Auth header with base64(email:password) and returns an access_token.
 func (c *Client) Authenticate(ctx context.Context, email, password string) (*AuthResult, error) {
-	req := AuthRequest{
-		Email:    email,
-		Password: password,
+	// Build the request manually since we need Basic Auth header
+	fullURL := c.config.BaseURL + "/api/v1/auth/signin"
+	
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
 	}
-
-	var response APIResponse[struct {
-		Token   TokenDTO   `json:"token"`
-		Student StudentDTO `json:"student"`
-	}]
-
-	if err := c.doSingleRequest(ctx, http.MethodPost, "/auth/sign-in", req, &response); err != nil {
-		return nil, fmt.Errorf("authenticate: %w", err)
+	
+	// Set Basic Authentication header
+	credentials := email + ":" + password
+	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
+	req.Header.Set("Authorization", "Basic "+encoded)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	
+	// Execute request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute request: %w", err)
 	}
-
-	if !response.Success {
-		return nil, fmt.Errorf("authentication failed: %s", response.Error)
+	defer resp.Body.Close()
+	
+	// Read response body
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
 	}
-
-	// Calculate expiration time
-	token := response.Data.Token
-	if token.ExpiresIn > 0 {
-		token.ExpiresAt = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("auth failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
-
+	
+	// Parse response - Alem returns {"access_token": "...", "verified": true}
+	var authResponse struct {
+		AccessToken string `json:"access_token"`
+		Verified    bool   `json:"verified"`
+	}
+	if err := json.Unmarshal(respBody, &authResponse); err != nil {
+		return nil, fmt.Errorf("parse auth response: %w", err)
+	}
+	
+	// Create token from access_token
+	token := TokenDTO{
+		AccessToken: authResponse.AccessToken,
+		TokenType:   "Bearer",
+	}
+	
 	// Store token for subsequent requests
 	c.tokenMu.Lock()
 	c.token = &token
 	c.tokenMu.Unlock()
-
+	
 	return &AuthResult{
 		Token:   &token,
-		Student: &response.Data.Student,
+		Student: nil, // Alem signin doesn't return student data directly
 	}, nil
 }
 
@@ -661,7 +686,7 @@ func (c *Client) GetAllStudents(ctx context.Context) ([]StudentDTO, error) {
 
 // GetBootcamp fetches the bootcamp data.
 func (c *Client) GetBootcamp(ctx context.Context, bootcampID, cohortID string) (*BootcampDTO, error) {
-	path := fmt.Sprintf("/bootcamp/%s?cohort_id=%s", bootcampID, cohortID)
+	path := fmt.Sprintf("/api/v1/bootcamp/%s?cohort_id=%s", bootcampID, cohortID)
     
 	// NOTE: The previous context indicated this endpoint might not use the standard APIResponse wrapper.
 	// We will try without wrapper first based on the user's description, 

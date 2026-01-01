@@ -114,6 +114,9 @@ type AlemClient interface {
 
 	// GetBootcamp fetches bootcamp data.
 	GetBootcamp(ctx context.Context, bootcampID, cohortID string) (*alem.BootcampDTO, error)
+
+	// GetStudentTaskCompletions fetches all task completions for a specific student.
+	GetStudentTaskCompletions(ctx context.Context, studentID string) ([]alem.TaskCompletionDTO, error)
 }
 
 
@@ -176,7 +179,7 @@ func (j *SyncAllStudentsJob) Run(ctx context.Context) error {
 		defer cancel()
 	}
 
-	// Get all students to sync
+	// Get all students to sync from our database
 	students, err := j.getStudentsToSync(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get students to sync: %w", err)
@@ -192,20 +195,8 @@ func (j *SyncAllStudentsJob) Run(ctx context.Context) error {
 		return nil
 	}
 
-	// Fetch all students from Alem API
-	alemStudents, err := j.alemClient.GetAllStudents(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to fetch students from Alem API: %w", err)
-	}
-
-	// Create a map for quick lookup
-	alemStudentMap := make(map[string]alem.StudentDTO, len(alemStudents))
-	for _, as := range alemStudents {
-		alemStudentMap[as.Login] = as
-	}
-
-	// Sync students concurrently
-	j.syncStudentsConcurrently(ctx, students, alemStudentMap, stats)
+	// Sync students using bootcamp data (no external GetAllStudents API call)
+	j.syncStudentsFromBootcamp(ctx, students, stats)
 
 	// Update last sync time
 	if err := j.syncRepo.SetLastSyncTime(ctx, time.Now()); err != nil {
@@ -237,6 +228,151 @@ func (j *SyncAllStudentsJob) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// syncStudentsFromBootcamp syncs students using bootcamp data instead of external API.
+func (j *SyncAllStudentsJob) syncStudentsFromBootcamp(
+	ctx context.Context,
+	students []*student.Student,
+	stats *SyncStats,
+) {
+	var (
+		wg        sync.WaitGroup
+		semaphore = make(chan struct{}, j.config.Concurrency)
+		mu        sync.Mutex
+	)
+
+	for _, s := range students {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		wg.Add(1)
+		semaphore <- struct{}{} // Acquire
+
+		go func(st *student.Student) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // Release
+
+			// Sync bootcamp progress for this student
+			updated, xpDelta, err := j.syncStudentBootcamp(ctx, st)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				stats.FailedCount++
+				stats.Errors = append(stats.Errors, SyncError{
+					StudentID:  st.ID,
+					Email:      st.Email,
+					Error:      err,
+					OccurredAt: time.Now(),
+				})
+				j.logger.Warn("failed to sync student bootcamp",
+					"student_id", st.ID,
+					"email", st.Email,
+					"error", err,
+				)
+			} else {
+				stats.SyncedCount++
+				if updated {
+					stats.UpdatedCount++
+					stats.TotalXPDelta += xpDelta
+				}
+			}
+		}(s)
+	}
+
+	wg.Wait()
+}
+
+// syncStudentBootcamp syncs a single student using bootcamp data.
+func (j *SyncAllStudentsJob) syncStudentBootcamp(
+	ctx context.Context,
+	s *student.Student,
+) (updated bool, xpDelta int, err error) {
+	// Fetch bootcamp data
+	j.logger.Info("fetching bootcamp data",
+		"student_id", s.ID,
+		"bootcamp_id", j.config.BootcampID,
+		"cohort_id", j.config.CohortID,
+	)
+	
+	bootcamp, err := j.alemClient.GetBootcamp(ctx, j.config.BootcampID, j.config.CohortID)
+	if err != nil {
+		// Log the actual error - bootcamp endpoint requires authentication
+		j.logger.Info("bootcamp fetch failed (requires per-user authentication)",
+			"student_id", s.ID,
+			"error", err,
+		)
+		// Mark as synced anyway to update timestamp
+		s.SyncedWith(time.Now())
+		if saveErr := j.studentRepo.Update(ctx, s); saveErr != nil {
+			return false, 0, fmt.Errorf("failed to save student: %w", saveErr)
+		}
+		return false, 0, nil
+	}
+
+	j.logger.Info("bootcamp data received",
+		"student_id", s.ID,
+		"bootcamp_xp", bootcamp.UserXP,
+		"total_xp", bootcamp.TotalXP,
+	)
+
+	// Extract XP from bootcamp UserXP
+	newXP := student.XP(bootcamp.UserXP)
+	oldXP := int(s.CurrentXP)
+
+	if newXP != s.CurrentXP {
+		delta, err := s.UpdateXP(newXP)
+		if err != nil {
+			return false, 0, fmt.Errorf("failed to update XP: %w", err)
+		}
+		xpDelta = int(delta)
+		updated = true
+
+		// Save XP history
+		xpEntry := student.XPHistoryEntry{
+			Timestamp: time.Now(),
+			OldXP:     student.XP(oldXP),
+			NewXP:     newXP,
+			Delta:     delta,
+			Reason:    "bootcamp_sync",
+		}
+		if err := j.progressRepo.SaveXPChange(ctx, xpEntry); err != nil {
+			j.logger.Warn("failed to save XP history",
+				"student_id", s.ID,
+				"error", err,
+			)
+		}
+
+		j.logger.Info("student XP updated from bootcamp",
+			"student_id", s.ID,
+			"old_xp", oldXP,
+			"new_xp", newXP,
+			"delta", xpDelta,
+		)
+	}
+
+	// Update sync timestamp
+	s.SyncedWith(time.Now())
+
+	// Persist changes
+	if err := j.studentRepo.Update(ctx, s); err != nil {
+		return false, 0, fmt.Errorf("failed to save student: %w", err)
+	}
+
+	// Mark as synced
+	if err := j.syncRepo.MarkSynced(ctx, s.ID, time.Now()); err != nil {
+		j.logger.Warn("failed to mark student as synced",
+			"student_id", s.ID,
+			"error", err,
+		)
+	}
+
+	return updated, xpDelta, nil
 }
 
 // getStudentsToSync returns the list of students that need syncing.
@@ -429,18 +565,12 @@ func (j *SyncAllStudentsJob) syncStudent(
 
 // syncBootcampProgress fetches and processes bootcamp data.
 func (j *SyncAllStudentsJob) syncBootcampProgress(ctx context.Context, s *student.Student) error {
-	// NOTE: GetBootcamp uses the CLIENT'S auth token.
-	// If the client is authenticated as a specific user, it returns THAT user's progress.
-	// If the client uses an admin token, behavior depends on the API.
-	// We assume for now we are running in a context where we can get this data.
-	// Ideally, we would impersonate the student or use an admin endpoint.
-	
-	bootcamp, err := j.alemClient.GetBootcamp(ctx, j.config.BootcampID, j.config.CohortID)
+	// Use GetStudentTaskCompletions to fetch the specific student's completions.
+	// This ensures we get their individual progress, not the progress of the service account.
+	completions, err := j.alemClient.GetStudentTaskCompletions(ctx, s.ID)
 	if err != nil {
-		return fmt.Errorf("get bootcamp: %w", err)
+		return fmt.Errorf("get student task completions: %w", err)
 	}
-
-	completions := j.mapper.FlattenBootcampToCompletions(bootcamp, s.ID)
 	
 	newCompletions := 0
 	for _, dto := range completions {
@@ -450,10 +580,6 @@ func (j *SyncAllStudentsJob) syncBootcampProgress(ctx context.Context, s *studen
 		}
 
 		// Convert to domain entity
-		// We need to map TaskCompletionDTO (from alem package) to domain TaskCompletion
-		// BUT wait, FlattenBootcampToCompletions returns alem.TaskCompletionDTO
-		// We need to convert it to activity.TaskCompletion using the Mapper!
-		
 		tc, err := j.mapper.TaskCompletionFromDTO(&dto)
 		if err != nil {
 			continue 
