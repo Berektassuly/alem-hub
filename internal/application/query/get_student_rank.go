@@ -60,9 +60,6 @@ type StudentRankDTO struct {
 	// StudentID - внутренний ID студента.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin - логин на платформе Alem.
-	AlemLogin string `json:"alem_login"`
-
 	// DisplayName - отображаемое имя.
 	DisplayName string `json:"display_name"`
 
@@ -293,7 +290,6 @@ func (h *GetStudentRankHandler) buildDTO(
 ) StudentRankDTO {
 	dto := StudentRankDTO{
 		StudentID:     stud.ID,
-		AlemLogin:     string(stud.AlemLogin),
 		DisplayName:   stud.DisplayName,
 		Rank:          int(entry.Rank),
 		TotalStudents: totalCount,
@@ -346,12 +342,12 @@ func (h *GetStudentRankHandler) buildDTO(
 			// Сосед выше (ранг меньше = выше)
 			if n.Rank < entry.Rank {
 				dto.XPToNextRank = int(n.XP) - int(entry.XP) + 1
-				dto.NextRankStudent = n.AlemLogin
+				dto.NextRankStudent = n.DisplayName
 			}
 			// Сосед ниже
 			if n.Rank > entry.Rank {
 				dto.XPAheadOfPrevious = int(entry.XP) - int(n.XP)
-				dto.PreviousRankStudent = n.AlemLogin
+				dto.PreviousRankStudent = n.DisplayName
 			}
 		}
 	}

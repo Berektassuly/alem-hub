@@ -108,8 +108,6 @@ type OnlineStudentDTO struct {
 	// StudentID - внутренний ID.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin - логин на платформе Alem.
-	AlemLogin string `json:"alem_login"`
 
 	// DisplayName - отображаемое имя.
 	DisplayName string `json:"display_name"`
@@ -382,7 +380,6 @@ func (h *GetOnlineNowHandler) buildDTO(
 ) OnlineStudentDTO {
 	dto := OnlineStudentDTO{
 		StudentID:          stud.ID,
-		AlemLogin:          string(stud.AlemLogin),
 		DisplayName:        stud.DisplayName,
 		Status:             status,
 		StatusEmoji:        getStatusEmoji(status),

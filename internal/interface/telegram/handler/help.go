@@ -231,9 +231,6 @@ func (h *HelpHandler) formatHelper(num int, helper query.HelperDTO) string {
 	// Name
 	sb.WriteString(fmt.Sprintf("<b>%s</b>", escapeHTML(helper.DisplayName)))
 
-	// Alem login
-	sb.WriteString(fmt.Sprintf(" (@%s)", escapeHTML(helper.AlemLogin)))
-
 	sb.WriteString("\n")
 
 	// Rating and help count

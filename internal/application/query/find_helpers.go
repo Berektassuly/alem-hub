@@ -91,9 +91,6 @@ type HelperDTO struct {
 	// StudentID - внутренний ID.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin - логин на платформе Alem.
-	AlemLogin string `json:"alem_login"`
-
 	// DisplayName - отображаемое имя.
 	DisplayName string `json:"display_name"`
 
@@ -414,7 +411,6 @@ func (h *FindHelpersHandler) buildHelperDTO(
 
 	dto := &HelperDTO{
 		StudentID:           stud.ID,
-		AlemLogin:           string(stud.AlemLogin),
 		DisplayName:         stud.DisplayName,
 		IsOnline:            isOnline,
 		OnlineStatus:        onlineStatus,

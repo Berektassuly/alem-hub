@@ -34,10 +34,10 @@ func NewStudentRepository(conn *Connection) *StudentRepository {
 func (r *StudentRepository) Create(ctx context.Context, s *student.Student) error {
 	query := `
 		INSERT INTO students (
-			id, telegram_id, alem_login, display_name, current_xp, cohort,
+			id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			status, online_state, last_seen_at, last_synced_at, joined_at,
 			preferences, help_rating, help_count, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	prefsJSON, err := json.Marshal(preferencesToMap(s.Preferences))
@@ -48,7 +48,8 @@ func (r *StudentRepository) Create(ctx context.Context, s *student.Student) erro
 	_, err = r.conn.Exec(ctx, query,
 		s.ID,
 		int64(s.TelegramID),
-		string(s.AlemLogin),
+		s.Email,
+		s.PasswordHash,
 		s.DisplayName,
 		int(s.CurrentXP),
 		string(s.Cohort),
@@ -76,7 +77,7 @@ func (r *StudentRepository) Create(ctx context.Context, s *student.Student) erro
 // GetByID returns a student by internal ID.
 func (r *StudentRepository) GetByID(ctx context.Context, id string) (*student.Student, error) {
 	query := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
@@ -90,7 +91,7 @@ func (r *StudentRepository) GetByID(ctx context.Context, id string) (*student.St
 // GetByTelegramID returns a student by Telegram ID.
 func (r *StudentRepository) GetByTelegramID(ctx context.Context, telegramID student.TelegramID) (*student.Student, error) {
 	query := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
@@ -101,17 +102,17 @@ func (r *StudentRepository) GetByTelegramID(ctx context.Context, telegramID stud
 	return r.scanStudent(row)
 }
 
-// GetByAlemLogin returns a student by Alem login.
-func (r *StudentRepository) GetByAlemLogin(ctx context.Context, login student.AlemLogin) (*student.Student, error) {
+// GetByEmail returns a student by email.
+func (r *StudentRepository) GetByEmail(ctx context.Context, email string) (*student.Student, error) {
 	query := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
-		WHERE alem_login = $1
+		WHERE email = $1
 	`
 
-	row := r.conn.QueryRow(ctx, query, string(login))
+	row := r.conn.QueryRow(ctx, query, email)
 	return r.scanStudent(row)
 }
 
@@ -120,19 +121,20 @@ func (r *StudentRepository) Update(ctx context.Context, s *student.Student) erro
 	query := `
 		UPDATE students SET
 			telegram_id = $1,
-			alem_login = $2,
-			display_name = $3,
-			current_xp = $4,
-			cohort = $5,
-			status = $6,
-			online_state = $7,
-			last_seen_at = $8,
-			last_synced_at = $9,
-			preferences = $10,
-			help_rating = $11,
-			help_count = $12,
-			updated_at = $13
-		WHERE id = $14
+			email = $2,
+			password_hash = $3,
+			display_name = $4,
+			current_xp = $5,
+			cohort = $6,
+			status = $7,
+			online_state = $8,
+			last_seen_at = $9,
+			last_synced_at = $10,
+			preferences = $11,
+			help_rating = $12,
+			help_count = $13,
+			updated_at = $14
+		WHERE id = $15
 	`
 
 	prefsJSON, err := json.Marshal(preferencesToMap(s.Preferences))
@@ -142,7 +144,8 @@ func (r *StudentRepository) Update(ctx context.Context, s *student.Student) erro
 
 	result, err := r.conn.Exec(ctx, query,
 		int64(s.TelegramID),
-		string(s.AlemLogin),
+		s.Email,
+		s.PasswordHash,
 		s.DisplayName,
 		int(s.CurrentXP),
 		string(s.Cohort),
@@ -227,7 +230,7 @@ func (r *StudentRepository) GetByIDs(ctx context.Context, ids []string) ([]*stud
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
@@ -275,11 +278,11 @@ func (r *StudentRepository) Search(ctx context.Context, query string, opts stude
 	searchPattern := "%" + strings.ToLower(query) + "%"
 
 	sqlQuery := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
-		WHERE (LOWER(alem_login) LIKE $1 OR LOWER(display_name) LIKE $1)
+		WHERE (LOWER(email) LIKE $1 OR LOWER(display_name) LIKE $1)
 	`
 
 	if !opts.IncludeInactive {
@@ -303,7 +306,7 @@ func (r *StudentRepository) FindInactive(ctx context.Context, threshold time.Dur
 	thresholdTime := time.Now().UTC().Add(-threshold)
 
 	query := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
@@ -323,7 +326,7 @@ func (r *StudentRepository) FindInactive(ctx context.Context, threshold time.Dur
 // FindOnline finds students who are currently online.
 func (r *StudentRepository) FindOnline(ctx context.Context) ([]*student.Student, error) {
 	query := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
@@ -343,7 +346,7 @@ func (r *StudentRepository) FindOnline(ctx context.Context) ([]*student.Student,
 // FindByXPRange finds students within the specified XP range.
 func (r *StudentRepository) FindByXPRange(ctx context.Context, minXP, maxXP student.XP) ([]*student.Student, error) {
 	query := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students
@@ -390,15 +393,15 @@ func (r *StudentRepository) ExistsByTelegramID(ctx context.Context, telegramID s
 	return exists, nil
 }
 
-// ExistsByAlemLogin checks if a student exists by Alem login.
-func (r *StudentRepository) ExistsByAlemLogin(ctx context.Context, login student.AlemLogin) (bool, error) {
+// ExistsByEmail checks if a student exists by email.
+func (r *StudentRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	var exists bool
 	err := r.conn.QueryRow(ctx,
-		"SELECT EXISTS(SELECT 1 FROM students WHERE alem_login = $1)",
-		string(login),
+		"SELECT EXISTS(SELECT 1 FROM students WHERE email = $1)",
+		email,
 	).Scan(&exists)
 	if err != nil {
-		return false, fmt.Errorf("failed to check student existence by alem login: %w", err)
+		return false, fmt.Errorf("failed to check student existence by email: %w", err)
 	}
 	return exists, nil
 }
@@ -872,14 +875,15 @@ func (r *ProgressRepository) GetRecentAchievements(ctx context.Context, since ti
 func (r *StudentRepository) scanStudent(row pgx.Row) (*student.Student, error) {
 	var s student.Student
 	var telegramID int64
-	var alemLogin, cohort, status, onlineState string
+	var email, passwordHash, cohort, status, onlineState string
 	var currentXP int
 	var prefsJSON []byte
 
 	err := row.Scan(
 		&s.ID,
 		&telegramID,
-		&alemLogin,
+		&email,
+		&passwordHash,
 		&s.DisplayName,
 		&currentXP,
 		&cohort,
@@ -903,7 +907,8 @@ func (r *StudentRepository) scanStudent(row pgx.Row) (*student.Student, error) {
 	}
 
 	s.TelegramID = student.TelegramID(telegramID)
-	s.AlemLogin = student.AlemLogin(alemLogin)
+	s.Email = email
+	s.PasswordHash = passwordHash
 	s.CurrentXP = student.XP(currentXP)
 	s.Cohort = student.Cohort(cohort)
 	s.Status = student.Status(status)
@@ -920,14 +925,15 @@ func (r *StudentRepository) scanStudents(rows pgx.Rows) ([]*student.Student, err
 	for rows.Next() {
 		var s student.Student
 		var telegramID int64
-		var alemLogin, cohort, status, onlineState string
+		var email, passwordHash, cohort, status, onlineState string
 		var currentXP int
 		var prefsJSON []byte
 
 		err := rows.Scan(
 			&s.ID,
 			&telegramID,
-			&alemLogin,
+			&email,
+			&passwordHash,
 			&s.DisplayName,
 			&currentXP,
 			&cohort,
@@ -947,7 +953,8 @@ func (r *StudentRepository) scanStudents(rows pgx.Rows) ([]*student.Student, err
 		}
 
 		s.TelegramID = student.TelegramID(telegramID)
-		s.AlemLogin = student.AlemLogin(alemLogin)
+		s.Email = email
+		s.PasswordHash = passwordHash
 		s.CurrentXP = student.XP(currentXP)
 		s.Cohort = student.Cohort(cohort)
 		s.Status = student.Status(status)
@@ -967,7 +974,7 @@ func (r *StudentRepository) scanStudents(rows pgx.Rows) ([]*student.Student, err
 // buildListQuery builds a SELECT query with filters and ordering.
 func (r *StudentRepository) buildListQuery(opts student.ListOptions, whereClause string) string {
 	query := `
-		SELECT id, telegram_id, alem_login, display_name, current_xp, cohort,
+		SELECT id, telegram_id, email, password_hash, display_name, current_xp, cohort,
 			   status, online_state, last_seen_at, last_synced_at, joined_at,
 			   preferences, help_rating, help_count, created_at, updated_at
 		FROM students

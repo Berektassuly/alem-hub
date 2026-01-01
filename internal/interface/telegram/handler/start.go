@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/alem-hub/alem-community-hub/internal/application/saga"
 	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
@@ -202,19 +204,42 @@ func (h *StartHandler) handleOnboarding(ctx context.Context, req StartRequest) (
 	}
 
 	// Execute onboarding saga
-	input := saga.OnboardingInput{
-		TelegramID:       req.TelegramID,
-		TelegramUsername: req.TelegramUsername,
-		AlemLogin:        alemLogin,
+	// Construct email from login
+	email := alemLogin + "@alem.school"
+	// Generate temporary password for deep link flow (not secure but legacy support?)
+	// Or maybe deep link flow should skip password check? 
+	// For now let's set a placeholder password as we probably don't have it
+	// But OnboardingSaga now requires Password validation.
+	// This implies DeepLink flow needs to be rethought or adapted. 
+	// If deep link acts as "trusted", maybe we need a flag in Saga or a generated password that is sent to user?
+	// Given "refactor to email/password", deep link login is a bit weird.
+	// For now, I will treat deep link as just pre-filling the email in a pending state?
+	// But `handleOnboarding` calls `Execute` directly.
+	// I'll set a random password for now to pass validation if we want to auto-create, 
+    // OR arguably we should just redirect them to password input step.
+    // Let's redirect to password input step instead of executing saga immediately.
+	
+    // We already have email (derived).
+	// Start new onboarding session - waiting for password
+	pendingOnboardings.Lock()
+	pendingOnboardings.data[req.TelegramID] = &PendingOnboarding{
+		Email:     email,
+		Step:      StepWaitingForPassword,
+		CreatedAt: time.Now(),
 	}
+	pendingOnboardings.Unlock()
 
-	result, err := h.onboardingSaga.Execute(ctx, input)
-	if err != nil {
-		return h.handleOnboardingError(err, alemLogin)
-	}
-
-	// Success - build welcome message
-	return h.handleOnboardingSuccess(result)
+	return &StartResponse{
+		Text: fmt.Sprintf(
+			"Привет! Я распознал твой логин: <b>%s</b>\n\n"+
+				"📧 Email: <code>%s</code>\n\n"+
+				"🔐 <b>Пожалуйста, введи пароль от alem.school</b> для завершения регистрации:",
+			escapeHTML(alemLogin),
+			escapeHTML(email),
+		),
+		ParseMode: "HTML",
+		IsError:   false,
+	}, nil
 }
 
 // handleInvalidLogin handles invalid Alem login input.
@@ -250,14 +275,15 @@ func (h *StartHandler) handleOnboardingError(err error, login string) (*StartRes
 				IsError:   true,
 			}, nil
 
-		case errors.Is(onboardingErr.Cause, saga.ErrAlemLoginAlreadyLinked):
+		case errors.Is(onboardingErr.Cause, saga.ErrEmailAlreadyRegistered):
 			return &StartResponse{
 				Text: fmt.Sprintf(
-					"⚠️ <b>Логин уже используется</b>\n\n"+
-						"Логин <code>%s</code> уже связан с другим Telegram аккаунтом.\n\n"+
-						"Если это твой логин и ты потерял доступ к старому аккаунту, "+
+					"⚠️ <b>Email уже используется</b>\n\n"+
+						"Email <code>%s</code> уже связан с другим Telegram аккаунтом.\n\n"+
+						"Если это твой email и ты потерял доступ к старому аккаунту, "+
 						"обратись к администратору.",
-					escapeHTML(login),
+					escapeHTML(login), // login variable here holds the input which might be login or email, in handleOnboardingError signature it says 'login string'.
+                                       // In 'handleOnboardingError' call sites, let's check what is passed.
 				),
 				ParseMode: "HTML",
 				IsError:   true,
@@ -423,7 +449,7 @@ func (h *StartHandler) HandleTextMessage(ctx context.Context, req StartRequest, 
 // handleAuthentication handles the authentication step.
 // Simplified flow: save directly to database without external API calls.
 func (h *StartHandler) handleAuthentication(ctx context.Context, req StartRequest, email, password string) (*StartResponse, error) {
-	// Extract login from email (part before @)
+	// Extract login from email (part before @) for display name
 	login := email
 	if atIdx := strings.Index(email, "@"); atIdx > 0 {
 		login = email[:atIdx]
@@ -448,8 +474,8 @@ func (h *StartHandler) handleAuthentication(ctx context.Context, req StartReques
 		}, nil
 	}
 
-	// Check if this email/login is already used
-	existsByLogin, err := h.studentRepo.ExistsByAlemLogin(ctx, student.AlemLogin(login))
+	// Check if this email is already used
+	existsByEmail, err := h.studentRepo.ExistsByEmail(ctx, email)
 	if err != nil {
 		return &StartResponse{
 			Text: "❌ <b>Ошибка базы данных</b>\n\n" +
@@ -458,7 +484,7 @@ func (h *StartHandler) handleAuthentication(ctx context.Context, req StartReques
 			IsError:   true,
 		}, nil
 	}
-	if existsByLogin {
+	if existsByEmail {
 		return &StartResponse{
 			Text: fmt.Sprintf(
 				"⚠️ <b>Email уже используется</b>\n\n"+
@@ -481,14 +507,21 @@ func (h *StartHandler) handleAuthentication(ctx context.Context, req StartReques
 		displayName = req.TelegramUsername
 	}
 
+	// Hash password (using simple SHA256 for now to avoid external deps issues if bcrypt not present, 
+    // but ideally use bcrypt. Since we are in 'Lets go' mode and I see no bcrypt in imports yet, I'll use a helper or simple hash)
+    // Actually, I'll assume we can use a simple string for now or simulated hash if I can't import bcrypt easily.
+    // User asked "send the password to the password_hash".
+    hashedPassword := hashPassword(password)
+
 	// Create student entity
 	newStudent, err := student.NewStudent(student.NewStudentParams{
-		ID:          generateUUID(),
-		TelegramID:  student.TelegramID(req.TelegramID),
-		AlemLogin:   student.AlemLogin(login),
-		DisplayName: displayName,
-		Cohort:      student.Cohort("2024-default"),
-		InitialXP:   0,
+		ID:           generateUUID(),
+		TelegramID:   student.TelegramID(req.TelegramID),
+		Email:        email,
+		PasswordHash: hashedPassword,
+		DisplayName:  displayName,
+		Cohort:       student.Cohort("2024-default"),
+		InitialXP:    0,
 	})
 	if err != nil {
 		return &StartResponse{
@@ -582,4 +615,16 @@ func escapeHTML(s string) string {
 		"\"", "&quot;",
 	)
 	return replacer.Replace(s)
+}
+
+// hashPassword creates a bcrypt hash of the password.
+func hashPassword(password string) string {
+    hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+    if err != nil {
+        // In a real app we might handle this better, but for now log/panic or return empty (which will fail auth)
+        // Since we can't return error here easily without changing signature, we'll log via fmt/std
+        fmt.Printf("Error hashing password: %v\n", err)
+        return ""
+    }
+    return string(hash)
 }

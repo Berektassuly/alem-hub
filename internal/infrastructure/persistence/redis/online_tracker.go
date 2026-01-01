@@ -78,8 +78,7 @@ type OnlineInfo struct {
 	// StudentID is the unique identifier of the student.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin is the student's Alem platform login.
-	AlemLogin string `json:"alem_login,omitempty"`
+
 
 	// DisplayName is the student's display name.
 	DisplayName string `json:"display_name,omitempty"`
@@ -157,8 +156,7 @@ type OnlineEvent struct {
 	// StudentID is the student's unique identifier.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin is the student's Alem login.
-	AlemLogin string `json:"alem_login,omitempty"`
+
 
 	// PreviousState is the state before the change (if applicable).
 	PreviousState OnlineState `json:"previous_state,omitempty"`
@@ -254,7 +252,6 @@ func (t *OnlineTracker) SetOnline(ctx context.Context, info OnlineInfo) error {
 		event := OnlineEvent{
 			Type:          EventWentOnline,
 			StudentID:     info.StudentID,
-			AlemLogin:     info.AlemLogin,
 			PreviousState: previousState,
 			NewState:      StateOnline,
 			Timestamp:     now,
@@ -316,12 +313,10 @@ func (t *OnlineTracker) SetOffline(ctx context.Context, studentID string) error 
 	}
 
 	// Get current info for the event
+	var previousState OnlineState
 	info, _ := t.GetInfo(ctx, studentID)
-	previousState := StateOffline
-	alemLogin := ""
 	if info != nil {
 		previousState = info.State
-		alemLogin = info.AlemLogin
 	}
 
 	// Remove from all tracking structures
@@ -343,7 +338,6 @@ func (t *OnlineTracker) SetOffline(ctx context.Context, studentID string) error 
 		event := OnlineEvent{
 			Type:          EventWentOffline,
 			StudentID:     studentID,
-			AlemLogin:     alemLogin,
 			PreviousState: previousState,
 			NewState:      StateOffline,
 			Timestamp:     time.Now().UTC(),
@@ -379,7 +373,6 @@ func (t *OnlineTracker) SetAway(ctx context.Context, studentID string) error {
 		event := OnlineEvent{
 			Type:          EventWentAway,
 			StudentID:     studentID,
-			AlemLogin:     info.AlemLogin,
 			PreviousState: previousState,
 			NewState:      StateAway,
 			Timestamp:     time.Now().UTC(),

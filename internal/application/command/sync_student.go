@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -24,9 +25,9 @@ type SyncStudentCommand struct {
 	// If empty, AlemLogin must be provided.
 	StudentID string
 
-	// AlemLogin is the login on Alem platform.
-	// Used when syncing by login instead of internal ID.
-	AlemLogin string
+	// Email is the student's email.
+	// Used when syncing by email instead of internal ID.
+	Email string
 
 	// ForceSync bypasses the sync interval check.
 	ForceSync bool
@@ -37,8 +38,8 @@ type SyncStudentCommand struct {
 
 // Validate validates the command.
 func (c SyncStudentCommand) Validate() error {
-	if c.StudentID == "" && c.AlemLogin == "" {
-		return errors.New("sync_student: either student_id or alem_login must be provided")
+	if c.StudentID == "" && c.Email == "" {
+		return errors.New("sync_student: either student_id or email must be provided")
 	}
 	return nil
 }
@@ -194,7 +195,14 @@ func (h *SyncStudentHandler) Handle(ctx context.Context, cmd SyncStudentCommand)
 	}
 
 	// Fetch data from Alem API
-	alemData, err := h.alemClient.GetStudentByLogin(ctx, string(existingStudent.AlemLogin))
+	// Derive login from email
+	parts := strings.Split(existingStudent.Email, "@")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("sync_student: invalid email format: %s", existingStudent.Email)
+	}
+	login := parts[0]
+
+	alemData, err := h.alemClient.GetStudentByLogin(ctx, login)
 	if err != nil {
 		return nil, fmt.Errorf("sync_student: failed to fetch from Alem API: %w", err)
 	}
@@ -230,7 +238,7 @@ func (h *SyncStudentHandler) findStudent(ctx context.Context, cmd SyncStudentCom
 	if cmd.StudentID != "" {
 		return h.studentRepo.GetByID(ctx, cmd.StudentID)
 	}
-	return h.studentRepo.GetByAlemLogin(ctx, student.AlemLogin(cmd.AlemLogin))
+	return h.studentRepo.GetByEmail(ctx, cmd.Email)
 }
 
 // shouldSync determines if a sync should be performed based on the interval.

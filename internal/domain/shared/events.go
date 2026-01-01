@@ -117,7 +117,7 @@ func (e BaseEvent) WithCorrelationID(id string) BaseEvent {
 type StudentRegisteredEvent struct {
 	BaseEvent
 	TelegramID  int64  `json:"telegram_id"`
-	AlemLogin   string `json:"alem_login"`
+	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 	Cohort      string `json:"cohort"`
 }
@@ -126,18 +126,18 @@ type StudentRegisteredEvent struct {
 func (e StudentRegisteredEvent) Payload() map[string]interface{} {
 	return map[string]interface{}{
 		"telegram_id":  e.TelegramID,
-		"alem_login":   e.AlemLogin,
+		"email":        e.Email,
 		"display_name": e.DisplayName,
 		"cohort":       e.Cohort,
 	}
 }
 
 // NewStudentRegisteredEvent creates a new StudentRegisteredEvent.
-func NewStudentRegisteredEvent(studentID string, telegramID int64, alemLogin, displayName, cohort string) StudentRegisteredEvent {
+func NewStudentRegisteredEvent(studentID string, telegramID int64, email, displayName, cohort string) StudentRegisteredEvent {
 	return StudentRegisteredEvent{
 		BaseEvent:   NewBaseEvent(EventStudentRegistered, studentID),
 		TelegramID:  telegramID,
-		AlemLogin:   alemLogin,
+		Email:       email,
 		DisplayName: displayName,
 		Cohort:      cohort,
 	}

@@ -57,7 +57,6 @@ type LeaderboardViewEntry struct {
 	// Core identification
 	StudentID   string `json:"student_id"`
 	TelegramID  int64  `json:"telegram_id"`
-	AlemLogin   string `json:"alem_login"`
 	DisplayName string `json:"display_name"`
 
 	// Ranking data
@@ -172,7 +171,6 @@ func (lv *LeaderboardView) RebuildFromSnapshot(snapshot *leaderboard.Leaderboard
 func (lv *LeaderboardView) convertToViewEntry(entry *leaderboard.LeaderboardEntry) *LeaderboardViewEntry {
 	return &LeaderboardViewEntry{
 		StudentID:          entry.StudentID,
-		AlemLogin:          entry.AlemLogin,
 		DisplayName:        entry.DisplayName,
 		Rank:               entry.Rank,
 		XP:                 entry.XP,
@@ -193,7 +191,7 @@ func (lv *LeaderboardView) sortByXP() {
 		if lv.sortedByXP[i].XP != lv.sortedByXP[j].XP {
 			return lv.sortedByXP[i].XP > lv.sortedByXP[j].XP
 		}
-		return lv.sortedByXP[i].AlemLogin < lv.sortedByXP[j].AlemLogin
+		return lv.sortedByXP[i].DisplayName < lv.sortedByXP[j].DisplayName
 	})
 
 	// Assign ranks with shared rank support
@@ -216,7 +214,7 @@ func (lv *LeaderboardView) calculateCohortRanks() {
 			if entries[i].XP != entries[j].XP {
 				return entries[i].XP > entries[j].XP
 			}
-			return entries[i].AlemLogin < entries[j].AlemLogin
+			return entries[i].DisplayName < entries[j].DisplayName
 		})
 
 		// Assign cohort ranks

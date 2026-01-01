@@ -47,7 +47,7 @@ func (e BaseEvent) AggregateID() string {
 type StudentRegisteredEvent struct {
 	BaseEvent
 	TelegramID TelegramID
-	AlemLogin  AlemLogin
+	Email      string
 	Cohort     Cohort
 }
 
@@ -65,7 +65,7 @@ func NewStudentRegisteredEvent(student *Student) StudentRegisteredEvent {
 			StudentName: student.DisplayName,
 		},
 		TelegramID: student.TelegramID,
-		AlemLogin:  student.AlemLogin,
+		Email:      student.Email,
 		Cohort:     student.Cohort,
 	}
 }

@@ -29,9 +29,9 @@ type Repository interface {
 	// Возвращает ErrStudentNotFound, если студент не найден.
 	GetByTelegramID(ctx context.Context, telegramID TelegramID) (*Student, error)
 
-	// GetByAlemLogin возвращает студента по логину Alem.
-	// Возвращает ErrStudentNotFound, если студент не найден.
-	GetByAlemLogin(ctx context.Context, login AlemLogin) (*Student, error)
+	// GetByEmail returns a student by email.
+	// Returns ErrStudentNotFound, if student not found.
+	GetByEmail(ctx context.Context, email string) (*Student, error)
 
 	// Update обновляет данные студента.
 	// Возвращает ErrStudentNotFound, если студент не найден.
@@ -89,8 +89,8 @@ type Repository interface {
 	// ExistsByTelegramID проверяет существование по Telegram ID.
 	ExistsByTelegramID(ctx context.Context, telegramID TelegramID) (bool, error)
 
-	// ExistsByAlemLogin проверяет существование по логину Alem.
-	ExistsByAlemLogin(ctx context.Context, login AlemLogin) (bool, error)
+	// ExistsByEmail checks existence by email.
+	ExistsByEmail(ctx context.Context, email string) (bool, error)
 }
 
 // ListOptions содержит параметры для пагинации и сортировки.

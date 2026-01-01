@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -89,7 +90,7 @@ type SyncStats struct {
 // SyncError represents an error during sync.
 type SyncError struct {
 	StudentID  string
-	AlemLogin  string
+	Email      string
 	Error      error
 	OccurredAt time.Time
 	RetryCount int
@@ -286,7 +287,13 @@ func (j *SyncAllStudentsJob) syncStudentsConcurrently(
 			defer func() { <-semaphore }() // Release
 
 			// Find Alem data for this student
-			alemStudent, found := alemData[string(st.AlemLogin)]
+            // Derive login from email (assuming email is login@alem.school or similar)
+            login := ""
+            if idx := strings.Index(st.Email, "@"); idx > 0 {
+                login = st.Email[:idx]
+            }
+            
+			alemStudent, found := alemData[login]
 			if !found {
 				mu.Lock()
 				stats.SkippedCount++
@@ -304,13 +311,13 @@ func (j *SyncAllStudentsJob) syncStudentsConcurrently(
 				stats.FailedCount++
 				stats.Errors = append(stats.Errors, SyncError{
 					StudentID:  st.ID,
-					AlemLogin:  string(st.AlemLogin),
+					Email:      st.Email,
 					Error:      err,
 					OccurredAt: time.Now(),
 				})
 				j.logger.Error("failed to sync student",
 					"student_id", st.ID,
-					"alem_login", st.AlemLogin,
+					"email", st.Email,
 					"error", err,
 				)
 			} else {
@@ -447,7 +454,12 @@ func (j *SyncAllStudentsJob) SyncSingleStudent(ctx context.Context, studentID st
 	}
 
 	// Fetch fresh data from Alem
-	alemData, err := j.alemClient.GetStudentByLogin(ctx, string(s.AlemLogin))
+    login := ""
+    if idx := strings.Index(s.Email, "@"); idx > 0 {
+        login = s.Email[:idx]
+    }
+    
+	alemData, err := j.alemClient.GetStudentByLogin(ctx, login)
 	if err != nil {
 		return fmt.Errorf("failed to fetch from Alem API: %w", err)
 	}

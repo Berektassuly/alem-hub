@@ -3,7 +3,7 @@
 // Это ядро бизнес-логики системы "Alem Community Hub". Пакет определяет:
 //
 //   - Сущности (Entities): Student, Progress, DailyGrind, Streak, Achievement
-//   - Value Objects: TelegramID, AlemLogin, XP, Level, Cohort, Status
+//   - Value Objects: TelegramID, XP, Level, Cohort, Status
 //   - Доменные события (Events): StudentRegistered, XPGained, TaskCompleted и др.
 //   - Интерфейсы репозиториев: Repository, ProgressRepository, OnlineTracker
 //
@@ -28,7 +28,7 @@
 //	student, err := NewStudent(NewStudentParams{
 //	    ID:          uuid.New().String(),
 //	    TelegramID:  TelegramID(123456789),
-//	    AlemLogin:   AlemLogin("student_login"),
+//	    Email:       "student@alem.school",
 //	    DisplayName: "Имя Студента",
 //	    Cohort:      Cohort("2024-spring"),
 //	    InitialXP:   XP(0),

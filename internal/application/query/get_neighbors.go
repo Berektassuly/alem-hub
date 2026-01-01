@@ -65,9 +65,6 @@ type NeighborDTO struct {
 	// StudentID - внутренний ID.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin - логин на платформе Alem.
-	AlemLogin string `json:"alem_login"`
-
 	// DisplayName - отображаемое имя.
 	DisplayName string `json:"display_name"`
 
@@ -304,7 +301,6 @@ func (h *GetNeighborsHandler) buildResult(
 
 		dto := NeighborDTO{
 			StudentID:          n.StudentID,
-			AlemLogin:          n.AlemLogin,
 			DisplayName:        n.DisplayName,
 			Rank:               int(n.Rank),
 			XP:                 int(n.XP),
@@ -391,19 +387,19 @@ func (h *GetNeighborsHandler) generateMotivationalMessage(
 
 	// Очень близко к обгону
 	if above != nil && xpToOvertake <= 10 {
-		return fmt.Sprintf("🔥 Всего %d XP до обгона @%s!", xpToOvertake, above.AlemLogin)
+		return fmt.Sprintf("🔥 Всего %d XP до обгона @%s!", xpToOvertake, above.DisplayName)
 	}
 
 	// Близко к обгону
 	if above != nil && xpToOvertake <= 50 {
-		return fmt.Sprintf("💪 До @%s осталось %d XP - одна задача!", above.AlemLogin, xpToOvertake)
+		return fmt.Sprintf("💪 До @%s осталось %d XP - одна задача!", above.DisplayName, xpToOvertake)
 	}
 
 	// Кто-то близко к нам
 	if below != nil {
 		gap := current.XP - below.XP
 		if gap <= 20 {
-			return fmt.Sprintf("⚠️ @%s дышит в спину! Всего %d XP разницы!", below.AlemLogin, gap)
+			return fmt.Sprintf("⚠️ @%s дышит в спину! Всего %d XP разницы!", below.DisplayName, gap)
 		}
 	}
 

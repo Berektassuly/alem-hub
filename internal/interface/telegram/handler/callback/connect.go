@@ -154,7 +154,7 @@ func (h *ConnectHandler) Handle(ctx context.Context, req ConnectRequest) (*Conne
 // buildResponse builds the response with contact information.
 func (h *ConnectHandler) buildResponse(target *student.Student, connResult *command.ConnectStudentsResult, taskID string) *ConnectResponse {
 	// Build toast message
-	toastMsg := fmt.Sprintf("📨 Напиши @%s в Telegram!", target.AlemLogin)
+	toastMsg := fmt.Sprintf("📨 Напиши %s в Telegram!", target.DisplayName)
 
 	// Build detailed message
 	var sb strings.Builder
@@ -163,7 +163,6 @@ func (h *ConnectHandler) buildResponse(target *student.Student, connResult *comm
 
 	// Profile info
 	sb.WriteString(fmt.Sprintf("👤 <b>%s</b>\n", escapeHTML(target.DisplayName)))
-	sb.WriteString(fmt.Sprintf("📱 Telegram: @%s\n", escapeHTML(string(target.AlemLogin))))
 	sb.WriteString(fmt.Sprintf("🎯 Уровень: %d\n", target.Level()))
 
 	// Helper rating
@@ -189,7 +188,7 @@ func (h *ConnectHandler) buildResponse(target *student.Student, connResult *comm
 
 	// Instructions
 	sb.WriteString("<b>Как связаться:</b>\n")
-	sb.WriteString(fmt.Sprintf("1. Открой чат с @%s\n", escapeHTML(string(target.AlemLogin))))
+	sb.WriteString(fmt.Sprintf("1. <a href=\"tg://user?id=%d\">Нажми сюда</a>, чтобы открыть чат\n", target.TelegramID))
 	sb.WriteString("2. Напиши своё сообщение\n")
 	sb.WriteString("3. После помощи не забудь поблагодарить! 🙏\n\n")
 
@@ -202,7 +201,7 @@ func (h *ConnectHandler) buildResponse(target *student.Student, connResult *comm
 		ShowAlert:      false,
 		UpdatedText:    sb.String(),
 		ParseMode:      "HTML",
-		TargetUsername: string(target.AlemLogin),
+		TargetUsername: "", // Removed usage of AlemLogin as username
 		IsError:        false,
 	}
 }

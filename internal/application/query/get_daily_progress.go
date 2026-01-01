@@ -232,8 +232,6 @@ type GetDailyProgressResult struct {
 	// StudentID - ID студента.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin - логин.
-	AlemLogin string `json:"alem_login"`
 
 	// DisplayName - отображаемое имя.
 	DisplayName string `json:"display_name"`
@@ -352,7 +350,6 @@ func (h *GetDailyProgressHandler) Handle(ctx context.Context, query GetDailyProg
 
 	result := &GetDailyProgressResult{
 		StudentID:   stud.ID,
-		AlemLogin:   string(stud.AlemLogin),
 		DisplayName: stud.DisplayName,
 		Today:       todayDTO,
 		TotalXP:     int(stud.CurrentXP),

@@ -110,9 +110,8 @@ func (h *SettingsHandler) buildSettingsView(stud *student.Student) string {
 	sb.WriteString("⚙️ <b>Настройки</b>\n\n")
 
 	// Profile info
-	sb.WriteString(fmt.Sprintf("👤 <b>%s</b> (@%s)\n\n",
-		escapeHTML(stud.DisplayName),
-		escapeHTML(string(stud.AlemLogin))))
+	sb.WriteString(fmt.Sprintf("👤 <b>%s</b>\n\n",
+		escapeHTML(stud.DisplayName)))
 
 	// Notifications section
 	sb.WriteString("🔔 <b>Уведомления</b>\n")

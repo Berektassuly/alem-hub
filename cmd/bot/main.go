@@ -20,31 +20,31 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	// Application layer
-	"alem-hub/internal/application/command"
-	"alem-hub/internal/application/eventhandler"
-	"alem-hub/internal/application/query"
-	"alem-hub/internal/application/saga"
+	"github.com/alem-hub/alem-community-hub/internal/application/command"
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/application/saga"
 
 	// Domain layer
-	"alem-hub/internal/domain/shared"
+	// "github.com/alem-hub/alem-community-hub/internal/domain/shared"
 
 	// Infrastructure layer
-	"alem-hub/internal/infrastructure/external/alem"
-	"alem-hub/internal/infrastructure/messaging"
-	"alem-hub/internal/infrastructure/persistence/postgres"
-	"alem-hub/internal/infrastructure/persistence/redis"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/alem"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/messaging"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/persistence/postgres"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/persistence/redis"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/service"
 
 	// Interface layer
-	httpserver "alem-hub/internal/interface/http"
-	"alem-hub/internal/interface/telegram"
+	httpserver "github.com/alem-hub/alem-community-hub/internal/interface/http"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram"
 
 	// Packages
-	"alem-hub/pkg/logger"
-	"alem-hub/pkg/timeutil"
+	"github.com/alem-hub/alem-community-hub/pkg/logger"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -147,11 +147,6 @@ func run(ctx context.Context) error {
 		"timezone", cfg.AppTimezone,
 	)
 
-	// Устанавливаем временную зону приложения
-	if err := timeutil.SetDefaultTimezone(cfg.AppTimezone); err != nil {
-		log.Warn("failed to set timezone, using UTC", "error", err)
-	}
-
 	// ─────────────────────────────────────────────────────────────────────────
 	// 3. ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ (PostgreSQL/Supabase)
 	// ─────────────────────────────────────────────────────────────────────────
@@ -197,21 +192,41 @@ func run(ctx context.Context) error {
 	// 5. ИНИЦИАЛИЗАЦИЯ REDIS (опционально)
 	// ─────────────────────────────────────────────────────────────────────────
 	var redisCache *redis.Cache
-	var onlineTracker *redis.OnlineTracker
+	var redisOnlineTracker *redis.OnlineTracker
 	var leaderboardCache *redis.LeaderboardCache
+	var studentCache *redis.StudentCache
 
 	if cfg.RedisEnabled && cfg.RedisURL != "" {
 		log.Info("connecting to Redis...")
-		redisCache, err = redis.NewCache(ctx, cfg.RedisURL)
+		// Parse host/port from URL strictly for this example or use defaults
+		redisCfg := redis.DefaultConfig()
+		// Simple fallback parsing for "host:port" strings
+		if strings.Contains(cfg.RedisURL, ":") {
+			parts := strings.Split(cfg.RedisURL, ":")
+			if len(parts) == 2 {
+				redisCfg.Host = parts[0]
+				if p, err := strconv.Atoi(parts[1]); err == nil {
+					redisCfg.Port = p
+				}
+			}
+		}
+
+		redisCache, err = redis.NewCache(redisCfg)
 		if err != nil {
 			log.Warn("failed to connect to Redis, caching disabled", "error", err)
 		} else {
 			defer redisCache.Close()
-			onlineTracker = redis.NewOnlineTracker(redisCache)
+			redisOnlineTracker = redis.NewOnlineTracker(redisCache)
 			leaderboardCache = redis.NewLeaderboardCache(redisCache)
+			studentCache = redis.NewStudentCache(redisCache)
 			log.Info("Redis connection established")
 		}
 	}
+
+	// Create adapters for the tracker interfaces
+	studentOnlineTracker := service.NewStudentOnlineTrackerAdapter(redisOnlineTracker)
+	activityOnlineTracker := service.NewActivityOnlineTrackerAdapter(redisOnlineTracker)
+	taskIndex := service.NewTaskIndexStub()
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 6. ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ
@@ -220,6 +235,8 @@ func run(ctx context.Context) error {
 	studentRepo := postgres.NewStudentRepository(dbConn)
 	progressRepo := postgres.NewProgressRepository(dbConn)
 	leaderboardRepo := postgres.NewLeaderboardRepository(dbConn)
+	socialRepo := postgres.NewSocialRepository(dbConn)
+	activityRepo := postgres.NewActivityRepository(dbConn)
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 7. ИНИЦИАЛИЗАЦИЯ EVENT BUS
@@ -240,120 +257,115 @@ func run(ctx context.Context) error {
 	log.Info("initializing external clients...")
 
 	// Alem Platform API Client
-	alemConfig := alem.DefaultClientConfig()
-	alemConfig.BaseURL = cfg.AlemAPIURL
-	alemConfig.Token = cfg.AlemAPIToken
+	alemConfig := alem.DefaultClientConfig(cfg.AlemAPIURL)
+	alemConfig.APIKey = cfg.AlemAPIToken
 	alemConfig.Logger = log
 	alemClient := alem.NewClient(alemConfig)
+	alemAPIAdapter := service.NewAlemAPIAdapter(alemClient)
+	sagaAlemAPIAdapter := service.NewSagaAlemAPIAdapter(alemClient)
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// 9. ИНИЦИАЛИЗАЦИЯ APPLICATION LAYER (Commands, Queries, Sagas)
+	// 9. ИНИЦИАЛИЗАЦИЯ APPLICATION LAYER (Services, Commands, Queries, Sagas)
 	// ─────────────────────────────────────────────────────────────────────────
 	log.Info("initializing application layer...")
+
+	// Services
+	leaderboardService := service.NewLeaderboardService(leaderboardRepo, leaderboardCache)
+	helperNotifier := service.NewHelperNotifierStub()
+	matchingService := service.NewHelperMatchingServiceStub()
+	notificationService := service.NewNotificationServiceStub(log)
+	idGenerator := service.NewIDGenerator()
 
 	// Commands (CQRS Write Side)
 	syncStudentCmd := command.NewSyncStudentHandler(
 		studentRepo,
 		progressRepo,
-		alemClient,
+		alemAPIAdapter,
+		leaderboardService,
 		eventBus,
-		log,
+		command.DefaultSyncStudentHandlerConfig(),
 	)
 
 	requestHelpCmd := command.NewRequestHelpHandler(
 		studentRepo,
+		socialRepo,
+		activityRepo,
+		activityOnlineTracker,
+		helperNotifier,
+		matchingService,
 		eventBus,
-		log,
+		command.DefaultRequestHelpHandlerConfig(),
 	)
 
 	connectStudentsCmd := command.NewConnectStudentsHandler(
 		studentRepo,
+		socialRepo,
 		eventBus,
-		log,
 	)
 
 	updatePrefsCmd := command.NewUpdatePreferencesHandler(
 		studentRepo,
-		log,
+		studentCache,
 	)
 
 	// Queries (CQRS Read Side)
 	leaderboardQuery := query.NewGetLeaderboardHandler(
 		leaderboardRepo,
 		leaderboardCache,
-		log,
+		studentOnlineTracker,
 	)
 
 	studentRankQuery := query.NewGetStudentRankHandler(
 		studentRepo,
 		leaderboardRepo,
-		log,
+		leaderboardCache,
+		studentOnlineTracker,
 	)
 
 	neighborsQuery := query.NewGetNeighborsHandler(
-		leaderboardRepo,
 		studentRepo,
-		log,
+		leaderboardRepo,
+		studentOnlineTracker,
 	)
 
 	findHelpersQuery := query.NewFindHelpersHandler(
 		studentRepo,
-		onlineTracker,
-		log,
+		activityRepo,
+		activityOnlineTracker,
+		taskIndex,
+		socialRepo,
 	)
 
 	onlineNowQuery := query.NewGetOnlineNowHandler(
 		studentRepo,
-		onlineTracker,
-		log,
+		studentOnlineTracker,
+		activityRepo,
+		leaderboardRepo,
 	)
 
 	dailyProgressQuery := query.NewGetDailyProgressHandler(
+		studentRepo,
 		progressRepo,
-		log,
+		leaderboardRepo,
 	)
 
 	// Sagas (сложные бизнес-процессы)
 	onboardingSaga := saga.NewOnboardingSaga(
 		studentRepo,
-		alemClient,
+		progressRepo,
+		leaderboardRepo,
+		notificationService,
+		sagaAlemAPIAdapter,
 		eventBus,
-		log,
+		idGenerator,
+		saga.DefaultOnboardingConfig(),
 	)
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// 10. РЕГИСТРАЦИЯ EVENT HANDLERS
+	// 10. РЕГИСТРАЦИЯ EVENT HANDLERS (Disabled for now - requires NotificationSender stubs)
 	// ─────────────────────────────────────────────────────────────────────────
-	log.Info("registering event handlers...")
-
-	// Handler для изменения ранга
-	rankChangedHandler := eventhandler.NewOnRankChangedHandler(
-		studentRepo,
-		nil, // telegramClient будет установлен позже через бота
-		log,
-	)
-	if err := eventBus.Subscribe(shared.EventRankChanged, rankChangedHandler.Handle); err != nil {
-		log.Warn("failed to subscribe rank changed handler", "error", err)
-	}
-
-	// Handler для выполнения задачи
-	taskCompletedHandler := eventhandler.NewOnTaskCompletedHandler(
-		studentRepo,
-		log,
-	)
-	if err := eventBus.Subscribe(shared.EventTaskCompleted, taskCompletedHandler.Handle); err != nil {
-		log.Warn("failed to subscribe task completed handler", "error", err)
-	}
-
-	// Handler для застрявших студентов
-	studentStuckHandler := eventhandler.NewOnStudentStuckHandler(
-		studentRepo,
-		findHelpersQuery,
-		log,
-	)
-	if err := eventBus.Subscribe(shared.EventStudentStuck, studentStuckHandler.Handle); err != nil {
-		log.Warn("failed to subscribe student stuck handler", "error", err)
-	}
+	log.Info("skipping event handlers for initial startup...")
+	// TODO: Add event handlers once NotificationSender stub is implemented
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 11. СОЗДАНИЕ TELEGRAM BOT
@@ -386,9 +398,6 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create bot: %w", err)
 	}
 
-	// Обновляем telegram клиент в event handler
-	rankChangedHandler.SetTelegramClient(bot.Client())
-
 	// ─────────────────────────────────────────────────────────────────────────
 	// 12. СОЗДАНИЕ HTTP SERVER
 	// ─────────────────────────────────────────────────────────────────────────
@@ -405,7 +414,7 @@ func run(ctx context.Context) error {
 		GetNeighborsHandler:     neighborsQuery,
 		GetDailyProgressHandler: dailyProgressQuery,
 		FindHelpersHandler:      findHelpersQuery,
-		Logger:                  logger.NewSlogAdapter(log),
+		Logger:                  logger.Default(),
 	}
 
 	httpServer := httpserver.NewServer(httpConfig, httpDeps)
@@ -465,14 +474,14 @@ func run(ctx context.Context) error {
 
 	// 1. Останавливаем бота (перестаём принимать новые запросы)
 	log.Info("stopping Telegram bot...")
-	if err := bot.Stop(); err != nil {
+	if err := bot.Stop(shutdownCtx); err != nil {
 		log.Error("failed to stop bot gracefully", "error", err)
 		shutdownErr = err
 	}
 
 	// 2. Останавливаем HTTP сервер
 	log.Info("stopping HTTP server...")
-	if err := httpServer.Stop(shutdownCtx); err != nil {
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Error("failed to stop HTTP server gracefully", "error", err)
 		shutdownErr = err
 	}

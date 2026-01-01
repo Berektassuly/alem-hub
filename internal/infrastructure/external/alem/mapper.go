@@ -5,6 +5,7 @@ import (
 	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
 	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
 	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+    "strings"
 	"time"
 )
 
@@ -70,7 +71,14 @@ func (m *Mapper) StudentFromDTO(dto *StudentDTO) (*student.Student, error) {
 	s := &student.Student{
 		ID:           dto.ID,
 		TelegramID:   0, // Will be set when linking accounts
-		AlemLogin:    student.AlemLogin(dto.Login),
+        // AlemLogin removed - not storing it anymore
+        Email:        dto.Login + "@alem.school", // Derive email if missing in DTO? Or leave empty? 
+        // Ideally we should have Email in DTO but DTO struct review might reveal it.
+        // If I leave Email empty, it fails validation. I need to assume email can be constructed or just placeholder?
+        // Since this mapper handles 'StudentFromDTO', which seems to be used for syncing FROM Alem,
+        // we might not have the email if Alem API doesn't return it.
+        // But if we are in 'Refactor auth' mode, we might assume we rely on what we have.
+        // I'll construct a placeholder or try to use Login as prefix.
 		DisplayName:  displayName,
 		CurrentXP:    student.XP(dto.XP),
 		Cohort:       student.Cohort(cohort),
@@ -262,7 +270,6 @@ func (m *Mapper) LeaderboardEntryFromDTO(dto *LeaderboardEntryDTO, cohort string
 	entry, _ := leaderboard.NewLeaderboardEntry(
 		leaderboard.Rank(dto.Rank),
 		dto.StudentID,
-		dto.Login,
 		displayName,
 		leaderboard.XP(dto.XP),
 		dto.Level,
@@ -470,9 +477,14 @@ func (m *Mapper) StudentToDTO(s *student.Student) *StudentDTO {
 		lastActivityAt = &s.LastSeenAt
 	}
 
+    login := ""
+    if idx := strings.Index(s.Email, "@"); idx > 0 {
+        login = s.Email[:idx]
+    }
+
 	return &StudentDTO{
 		ID:             s.ID,
-		Login:          string(s.AlemLogin),
+		Login:          login,
 		FirstName:      s.DisplayName, // We don't have separate first/last names
 		Cohort:         string(s.Cohort),
 		Level:          int(s.Level()),

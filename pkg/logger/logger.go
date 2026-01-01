@@ -317,7 +317,7 @@ func (l *Logger) WithRequestID(requestID string) *Logger {
 // Student-related logging helpers for Alem Hub.
 func StudentID(id string) Field     { return String("student_id", id) }
 func TelegramID(id int64) Field     { return Int64("telegram_id", id) }
-func AlemLogin(login string) Field  { return String("alem_login", login) }
+func Email(email string) Field    { return String("email", email) }
 func TaskName(name string) Field    { return String("task_name", name) }
 func XPAmount(xp int) Field         { return Int("xp_amount", xp) }
 func RankPosition(pos int) Field    { return Int("rank_position", pos) }

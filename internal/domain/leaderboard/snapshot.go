@@ -272,7 +272,7 @@ type SnapshotDiff struct {
 // TopChange представляет изменение в топе (вход/выход).
 type TopChange struct {
 	StudentID  string
-	AlemLogin  string
+
 	OldRank    Rank
 	NewRank    Rank
 	EnteredTop int // Вошёл в топ-N (0 если не вошёл)
@@ -359,7 +359,6 @@ func checkTopChange(oldEntry, newEntry *LeaderboardEntry) *TopChange {
 			// Вошёл в топ
 			return &TopChange{
 				StudentID:  newEntry.StudentID,
-				AlemLogin:  newEntry.AlemLogin,
 				OldRank:    oldEntry.Rank,
 				NewRank:    newEntry.Rank,
 				EnteredTop: topN,
@@ -369,7 +368,6 @@ func checkTopChange(oldEntry, newEntry *LeaderboardEntry) *TopChange {
 			// Вышел из топа
 			return &TopChange{
 				StudentID: newEntry.StudentID,
-				AlemLogin: newEntry.AlemLogin,
 				OldRank:   oldEntry.Rank,
 				NewRank:   newEntry.Rank,
 				LeftTop:   topN,

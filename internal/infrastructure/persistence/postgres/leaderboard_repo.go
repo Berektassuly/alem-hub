@@ -315,7 +315,7 @@ func (r *LeaderboardRepository) GetStudentRank(ctx context.Context, studentID st
 	// Get from latest snapshot
 	query := `
 		SELECT le.rank, le.xp, le.level, le.rank_change, le.is_online, le.is_available_for_help,
-			   s.id, s.alem_login, s.display_name, s.cohort, s.help_rating
+			   s.id, s.display_name, s.cohort, s.help_rating
 		FROM leaderboard_entries le
 		JOIN leaderboard_snapshots ls ON le.snapshot_id = ls.id
 		JOIN students s ON le.student_id = s.id
@@ -336,7 +336,6 @@ func (r *LeaderboardRepository) GetStudentRank(ctx context.Context, studentID st
 		&entry.IsOnline,
 		&entry.IsAvailableForHelp,
 		&entry.StudentID,
-		&entry.AlemLogin,
 		&entry.DisplayName,
 		&cohortStr,
 		&entry.HelpRating,
@@ -363,7 +362,7 @@ func (r *LeaderboardRepository) GetTop(ctx context.Context, cohort leaderboard.C
 	// Get from latest snapshot
 	query := `
 		SELECT le.rank, le.xp, le.level, le.rank_change, le.is_online, le.is_available_for_help,
-			   s.id, s.alem_login, s.display_name, s.cohort, s.help_rating
+			   s.id, s.display_name, s.cohort, s.help_rating
 		FROM leaderboard_entries le
 		JOIN leaderboard_snapshots ls ON le.snapshot_id = ls.id
 		JOIN students s ON le.student_id = s.id
@@ -389,7 +388,7 @@ func (r *LeaderboardRepository) GetPage(ctx context.Context, cohort leaderboard.
 
 	query := `
 		SELECT le.rank, le.xp, le.level, le.rank_change, le.is_online, le.is_available_for_help,
-			   s.id, s.alem_login, s.display_name, s.cohort, s.help_rating
+			   s.id, s.display_name, s.cohort, s.help_rating
 		FROM leaderboard_entries le
 		JOIN leaderboard_snapshots ls ON le.snapshot_id = ls.id
 		JOIN students s ON le.student_id = s.id
@@ -429,7 +428,7 @@ func (r *LeaderboardRepository) GetNeighbors(ctx context.Context, studentID stri
 
 	query := `
 		SELECT le.rank, le.xp, le.level, le.rank_change, le.is_online, le.is_available_for_help,
-			   s.id, s.alem_login, s.display_name, s.cohort, s.help_rating
+			   s.id, s.display_name, s.cohort, s.help_rating
 		FROM leaderboard_entries le
 		JOIN leaderboard_snapshots ls ON le.snapshot_id = ls.id
 		JOIN students s ON le.student_id = s.id
@@ -643,7 +642,7 @@ func (r *LeaderboardRepository) GetCohortStats(ctx context.Context, cohort leade
 // This is used when snapshots are not available or for real-time queries.
 func (r *LeaderboardRepository) BuildLiveRanking(ctx context.Context, cohort leaderboard.Cohort) (*leaderboard.Ranking, error) {
 	query := `
-		SELECT s.id, s.alem_login, s.display_name, s.current_xp, s.cohort,
+		SELECT s.id, s.display_name, s.current_xp, s.cohort,
 			   s.online_state, s.help_rating,
 			   (s.online_state = 'online' OR s.online_state = 'away') AND 
 			   (s.preferences->>'help_requests')::boolean AS available_for_help
@@ -675,7 +674,6 @@ func (r *LeaderboardRepository) BuildLiveRanking(ctx context.Context, cohort lea
 
 		err := rows.Scan(
 			&entry.StudentID,
-			&entry.AlemLogin,
 			&entry.DisplayName,
 			&xp,
 			&cohortStr,
@@ -726,7 +724,7 @@ func (r *LeaderboardRepository) CreateSnapshotFromLive(ctx context.Context, coho
 func (r *LeaderboardRepository) getSnapshotEntries(ctx context.Context, snapshotID string) ([]*leaderboard.LeaderboardEntry, error) {
 	query := `
 		SELECT le.rank, le.xp, le.level, le.rank_change, le.is_online, le.is_available_for_help,
-			   s.id, s.alem_login, s.display_name, s.cohort, s.help_rating
+			   s.id, s.display_name, s.cohort, s.help_rating
 		FROM leaderboard_entries le
 		JOIN students s ON le.student_id = s.id
 		WHERE le.snapshot_id = $1
@@ -759,7 +757,6 @@ func (r *LeaderboardRepository) scanLeaderboardEntries(rows pgx.Rows) ([]*leader
 			&entry.IsOnline,
 			&entry.IsAvailableForHelp,
 			&entry.StudentID,
-			&entry.AlemLogin,
 			&entry.DisplayName,
 			&cohortStr,
 			&entry.HelpRating,

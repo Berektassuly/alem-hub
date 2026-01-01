@@ -423,11 +423,11 @@ func (h *OnStudentStuckHandler) notifyStudentWithHelpers(
 				}
 			}
 
-			sb.WriteString(fmt.Sprintf("%d. %s @%s%s\n",
-				i+1, statusEmoji, helper.Student.AlemLogin, ratingStr))
+			sb.WriteString(fmt.Sprintf("%d. %s <a href=\"tg://user?id=%d\">%s</a>%s\n",
+				i+1, statusEmoji, int64(helper.Student.TelegramID), helper.Student.DisplayName, ratingStr))
 		}
 
-		sb.WriteString("\nНажми на логин, чтобы написать!")
+		sb.WriteString("\nНажми на имя, чтобы написать!")
 		message = sb.String()
 	}
 
@@ -550,7 +550,7 @@ func (h *OnStudentStuckHandler) notifyPotentialHelpers(
 		} else {
 			h.logger.Debug("helper notified",
 				"helper_id", helper.StudentID,
-				"helper_login", helper.Student.AlemLogin,
+				"helper_login", helper.Student.DisplayName,
 			)
 		}
 	}

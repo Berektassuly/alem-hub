@@ -114,10 +114,7 @@ func (p *StudentCardPresenter) formatHeader(dto *query.StudentRankDTO) string {
 	// Имя
 	sb.WriteString(fmt.Sprintf("<b>%s</b>", p.escapeHTML(dto.DisplayName)))
 
-	// Логин
-	if dto.AlemLogin != dto.DisplayName {
-		sb.WriteString(fmt.Sprintf(" (@%s)", p.escapeHTML(dto.AlemLogin)))
-	}
+
 
 	// Когорта
 	if dto.Cohort != "" {
@@ -420,9 +417,7 @@ func (p *StudentCardPresenter) FormatOtherStudentProfile(
 	}
 	sb.WriteString(fmt.Sprintf("<b>%s</b>", p.escapeHTML(dto.DisplayName)))
 
-	if dto.AlemLogin != dto.DisplayName {
-		sb.WriteString(fmt.Sprintf(" (@%s)", p.escapeHTML(dto.AlemLogin)))
-	}
+
 
 	sb.WriteString("\n\n")
 

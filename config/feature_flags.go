@@ -51,7 +51,7 @@ type Feature struct {
 // FeatureContext provides context for feature flag evaluation.
 type FeatureContext struct {
 	UserID    int64  // Telegram ID
-	AlemLogin string // Alem platform login
+
 	Cohort    string // Student cohort (e.g., "2024-spring")
 	IsAdmin   bool   // Is admin user
 }

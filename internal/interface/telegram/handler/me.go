@@ -137,7 +137,7 @@ func (h *MeHandler) buildStudentCard(
 	// Header with name and status
 	statusEmoji := getOnlineStatusEmoji(stud.OnlineState)
 	sb.WriteString(fmt.Sprintf("👤 <b>%s</b> %s\n", escapeHTML(stud.DisplayName), statusEmoji))
-	sb.WriteString(fmt.Sprintf("└ @%s\n\n", escapeHTML(string(stud.AlemLogin))))
+
 
 	// XP and Level section
 	sb.WriteString("📊 <b>Прогресс</b>\n")

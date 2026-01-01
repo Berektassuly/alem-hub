@@ -104,8 +104,7 @@ type MatchedHelperInfo struct {
 	// DisplayName is the helper's display name.
 	DisplayName string
 
-	// AlemLogin is the helper's Alem login.
-	AlemLogin string
+
 
 	// TelegramID is the helper's Telegram ID.
 	TelegramID int64
@@ -388,7 +387,6 @@ func (h *RequestHelpHandler) convertSuggestionsToHelpers(
 		helper := MatchedHelperInfo{
 			StudentID:       string(suggestion.StudentID),
 			DisplayName:     stud.DisplayName,
-			AlemLogin:       string(stud.AlemLogin),
 			TelegramID:      int64(stud.TelegramID),
 			IsOnline:        suggestion.IsOnline,
 			LastSeenAt:      suggestion.LastSeenAt,
@@ -442,7 +440,6 @@ func (h *RequestHelpHandler) manualHelperMatching(
 		helpers = append(helpers, MatchedHelperInfo{
 			StudentID:   preferredID,
 			DisplayName: stud.DisplayName,
-			AlemLogin:   string(stud.AlemLogin),
 			TelegramID:  int64(stud.TelegramID),
 			IsOnline:    isOnline,
 			LastSeenAt:  stud.LastSeenAt,
@@ -501,7 +498,6 @@ func (h *RequestHelpHandler) manualHelperMatching(
 				helpers = append(helpers, MatchedHelperInfo{
 					StudentID:   string(studentID),
 					DisplayName: stud.DisplayName,
-					AlemLogin:   string(stud.AlemLogin),
 					TelegramID:  int64(stud.TelegramID),
 					IsOnline:    isOnline,
 					LastSeenAt:  stud.LastSeenAt,

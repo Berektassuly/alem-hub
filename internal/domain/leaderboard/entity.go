@@ -163,9 +163,6 @@ type LeaderboardEntry struct {
 	// StudentID - внутренний идентификатор студента.
 	StudentID string
 
-	// AlemLogin - логин на платформе Alem (для отображения).
-	AlemLogin string
-
 	// DisplayName - отображаемое имя студента.
 	DisplayName string
 
@@ -198,7 +195,6 @@ type LeaderboardEntry struct {
 func NewLeaderboardEntry(
 	rank Rank,
 	studentID string,
-	alemLogin string,
 	displayName string,
 	xp XP,
 	level int,
@@ -210,9 +206,6 @@ func NewLeaderboardEntry(
 	if studentID == "" {
 		return nil, ErrInvalidStudentID
 	}
-	if alemLogin == "" {
-		return nil, ErrInvalidAlemLogin
-	}
 	if !xp.IsValid() {
 		return nil, ErrInvalidXP
 	}
@@ -220,7 +213,6 @@ func NewLeaderboardEntry(
 	return &LeaderboardEntry{
 		Rank:               rank,
 		StudentID:          studentID,
-		AlemLogin:          alemLogin,
 		DisplayName:        displayName,
 		XP:                 xp,
 		Level:              level,
@@ -286,8 +278,8 @@ func (e *LeaderboardEntry) Clone() *LeaderboardEntry {
 // String возвращает строковое представление для логирования.
 func (e *LeaderboardEntry) String() string {
 	return fmt.Sprintf(
-		"Entry{Rank: %d, Login: %s, XP: %d, Change: %s}",
-		e.Rank, e.AlemLogin, e.XP, e.RankChange.String(),
+		"Entry{Rank: %d, DisplayName: %s, XP: %d, Change: %s}",
+		e.Rank, e.DisplayName, e.XP, e.RankChange.String(),
 	)
 }
 
@@ -331,8 +323,8 @@ func (r *Ranking) SortByXP() {
 		if r.entries[i].XP != r.entries[j].XP {
 			return r.entries[i].XP > r.entries[j].XP
 		}
-		// При равном XP - по алфавиту логина (стабильная сортировка)
-		return r.entries[i].AlemLogin < r.entries[j].AlemLogin
+		// При равном XP - по алфавиту DisplayName (стабильная сортировка)
+		return r.entries[i].DisplayName < r.entries[j].DisplayName
 	})
 
 	// Присваиваем ранги с учётом "shared rank" (одинаковый XP = одинаковый ранг)
@@ -517,9 +509,6 @@ var (
 
 	// ErrInvalidStudentID - невалидный ID студента.
 	ErrInvalidStudentID = errors.New("invalid student id: cannot be empty")
-
-	// ErrInvalidAlemLogin - невалидный логин Alem.
-	ErrInvalidAlemLogin = errors.New("invalid alem login: cannot be empty")
 
 	// ErrInvalidXP - невалидное значение XP.
 	ErrInvalidXP = errors.New("invalid xp: must be non-negative")

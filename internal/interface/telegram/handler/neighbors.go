@@ -160,7 +160,7 @@ func (h *NeighborsHandler) buildNeighborsView(result *query.GetNeighborsResult) 
 	if result.ClosestAbove != nil && result.XPToOvertakeNext > 0 {
 		sb.WriteString("🎯 <b>Цель</b>\n")
 		sb.WriteString(fmt.Sprintf("До @%s осталось <b>%d XP</b>",
-			escapeHTML(result.ClosestAbove.AlemLogin),
+			escapeHTML(result.ClosestAbove.DisplayName),
 			result.XPToOvertakeNext))
 
 		if result.XPToOvertakeNext <= 50 {
@@ -173,7 +173,7 @@ func (h *NeighborsHandler) buildNeighborsView(result *query.GetNeighborsResult) 
 	if result.ClosestBelow != nil && result.XPAheadOfChaser > 0 && result.XPAheadOfChaser <= 30 {
 		sb.WriteString("⚠️ <b>Внимание</b>\n")
 		sb.WriteString(fmt.Sprintf("@%s отстаёт всего на <b>%d XP</b>!\n\n",
-			escapeHTML(result.ClosestBelow.AlemLogin),
+			escapeHTML(result.ClosestBelow.DisplayName),
 			result.XPAheadOfChaser))
 	}
 

@@ -21,19 +21,7 @@ func (t TelegramID) IsValid() bool {
 	return t > 0
 }
 
-// AlemLogin представляет логин студента на платформе Alem.
-type AlemLogin string
 
-// IsValid проверяет корректность логина Alem.
-func (a AlemLogin) IsValid() bool {
-	s := string(a)
-	return len(s) >= 2 && len(s) <= 50 && !strings.ContainsAny(s, " \t\n\r")
-}
-
-// String возвращает строковое представление логина.
-func (a AlemLogin) String() string {
-	return string(a)
-}
 
 // XP представляет очки опыта студента.
 type XP int
@@ -148,8 +136,11 @@ type Student struct {
 	// TelegramID - идентификатор пользователя в Telegram.
 	TelegramID TelegramID
 
-	// AlemLogin - логин на платформе Alem.
-	AlemLogin AlemLogin
+	// Email - email address of the student.
+	Email string
+
+	// PasswordHash - hashed password.
+	PasswordHash string
 
 	// DisplayName - отображаемое имя (может отличаться от логина).
 	DisplayName string
@@ -243,8 +234,11 @@ var (
 	// ErrInvalidTelegramID - невалидный Telegram ID.
 	ErrInvalidTelegramID = errors.New("invalid telegram id: must be positive")
 
-	// ErrInvalidAlemLogin - невалидный логин Alem.
-	ErrInvalidAlemLogin = errors.New("invalid alem login: must be 2-50 chars without whitespace")
+	// ErrInvalidEmail - invalid email.
+	ErrInvalidEmail = errors.New("invalid email")
+
+	// ErrInvalidPassword - invalid password.
+	ErrInvalidPassword = errors.New("invalid password")
 
 	// ErrInvalidXP - невалидное значение XP.
 	ErrInvalidXP = errors.New("invalid xp: must be non-negative")
@@ -279,7 +273,8 @@ var (
 type NewStudentParams struct {
 	ID          string
 	TelegramID  TelegramID
-	AlemLogin   AlemLogin
+	Email       string
+	PasswordHash string
 	DisplayName string
 	Cohort      Cohort
 	InitialXP   XP
@@ -295,8 +290,12 @@ func NewStudent(params NewStudentParams) (*Student, error) {
 		return nil, ErrInvalidTelegramID
 	}
 
-	if !params.AlemLogin.IsValid() {
-		return nil, ErrInvalidAlemLogin
+	if params.Email == "" || !strings.Contains(params.Email, "@") {
+		return nil, ErrInvalidEmail
+	}
+
+	if params.PasswordHash == "" {
+		return nil, ErrInvalidPassword
 	}
 
 	displayName := strings.TrimSpace(params.DisplayName)
@@ -317,7 +316,8 @@ func NewStudent(params NewStudentParams) (*Student, error) {
 	return &Student{
 		ID:           params.ID,
 		TelegramID:   params.TelegramID,
-		AlemLogin:    params.AlemLogin,
+		Email:        params.Email,
+		PasswordHash: params.PasswordHash,
 		DisplayName:  displayName,
 		CurrentXP:    params.InitialXP,
 		Cohort:       params.Cohort,
@@ -527,8 +527,8 @@ func (s *Student) IsVeteran() bool {
 // String возвращает строковое представление студента для логирования.
 func (s *Student) String() string {
 	return fmt.Sprintf(
-		"Student{ID: %s, Login: %s, XP: %d, Level: %d, Status: %s}",
-		s.ID, s.AlemLogin, s.CurrentXP, s.Level(), s.Status,
+		"Student{ID: %s, Email: %s, XP: %d, Level: %d, Status: %s}",
+		s.ID, s.Email, s.CurrentXP, s.Level(), s.Status,
 	)
 }
 

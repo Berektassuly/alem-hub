@@ -245,7 +245,6 @@ func (j *RebuildLeaderboardJob) rebuildLeaderboard(
 		entry, err := leaderboard.NewLeaderboardEntry(
 			leaderboard.Rank(1), // Will be recalculated
 			s.ID,
-			string(s.AlemLogin),
 			s.DisplayName,
 			leaderboard.XP(s.CurrentXP),
 			int(s.Level()),

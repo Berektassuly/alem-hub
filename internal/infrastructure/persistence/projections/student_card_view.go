@@ -31,8 +31,7 @@ type StudentCardView struct {
 	// byTelegramID indexes cards by Telegram ID for fast lookup.
 	byTelegramID map[int64]*StudentCard
 
-	// byAlemLogin indexes cards by Alem login.
-	byAlemLogin map[string]*StudentCard
+
 
 	// lastUpdated is the timestamp of the last update.
 	lastUpdated time.Time
@@ -50,7 +49,6 @@ type StudentCard struct {
 
 	StudentID   string             `json:"student_id"`
 	TelegramID  student.TelegramID `json:"telegram_id"`
-	AlemLogin   student.AlemLogin  `json:"alem_login"`
 	DisplayName string             `json:"display_name"`
 	Cohort      student.Cohort     `json:"cohort"`
 	Status      student.Status     `json:"status"`
@@ -197,7 +195,6 @@ func NewStudentCardView() *StudentCardView {
 	return &StudentCardView{
 		cards:        make(map[string]*StudentCard),
 		byTelegramID: make(map[int64]*StudentCard),
-		byAlemLogin:  make(map[string]*StudentCard),
 		lastUpdated:  time.Now().UTC(),
 		version:      1,
 	}
@@ -233,7 +230,6 @@ func (sv *StudentCardView) BuildCard(params BuildCardParams) (*StudentCard, erro
 		// Core identity
 		StudentID:   s.ID,
 		TelegramID:  s.TelegramID,
-		AlemLogin:   s.AlemLogin,
 		DisplayName: s.DisplayName,
 		Cohort:      s.Cohort,
 		Status:      s.Status,
@@ -357,7 +353,6 @@ func (sv *StudentCardView) UpsertCard(card *StudentCard) error {
 	// Update all indexes
 	sv.cards[card.StudentID] = card
 	sv.byTelegramID[int64(card.TelegramID)] = card
-	sv.byAlemLogin[string(card.AlemLogin)] = card
 
 	sv.lastUpdated = time.Now().UTC()
 	sv.version++
@@ -484,7 +479,6 @@ func (sv *StudentCardView) DeleteCard(studentID string) {
 
 	if card, exists := sv.cards[studentID]; exists {
 		delete(sv.byTelegramID, int64(card.TelegramID))
-		delete(sv.byAlemLogin, string(card.AlemLogin))
 		delete(sv.cards, studentID)
 		sv.version++
 	}
@@ -518,17 +512,7 @@ func (sv *StudentCardView) GetByTelegramID(ctx context.Context, telegramID int64
 	return nil, fmt.Errorf("projections: student card not found for Telegram ID %d", telegramID)
 }
 
-// GetByAlemLogin returns a student card by Alem login.
-func (sv *StudentCardView) GetByAlemLogin(ctx context.Context, login string) (*StudentCard, error) {
-	sv.mu.RLock()
-	defer sv.mu.RUnlock()
 
-	if card, exists := sv.byAlemLogin[login]; exists {
-		return card.clone(), nil
-	}
-
-	return nil, fmt.Errorf("projections: student card not found for login %s", login)
-}
 
 // GetAll returns all student cards with pagination.
 func (sv *StudentCardView) GetAll(ctx context.Context, offset, limit int) ([]*StudentCard, error) {

@@ -65,9 +65,6 @@ type LeaderboardEntryDTO struct {
 	// StudentID - внутренний ID студента.
 	StudentID string `json:"student_id"`
 
-	// AlemLogin - логин на платформе Alem.
-	AlemLogin string `json:"alem_login"`
-
 	// DisplayName - отображаемое имя.
 	DisplayName string `json:"display_name"`
 
@@ -344,7 +341,6 @@ func (h *GetLeaderboardHandler) toDTO(e *leaderboard.LeaderboardEntry) Leaderboa
 	dto := LeaderboardEntryDTO{
 		Rank:               int(e.Rank),
 		StudentID:          e.StudentID,
-		AlemLogin:          e.AlemLogin,
 		DisplayName:        e.DisplayName,
 		XP:                 int(e.XP),
 		Level:              e.Level,
