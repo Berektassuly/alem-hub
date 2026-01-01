@@ -236,6 +236,23 @@ func (h *GetStudentRankHandler) Handle(ctx context.Context, query GetStudentRank
 	if err != nil {
 		return nil, shared.WrapError("query", "GetStudentRank", shared.ErrNotFound, "rank not found", err)
 	}
+	
+	// Если студент еще не попал в снапшот лидерборда
+	if entry == nil {
+		// Возвращаем пустой результат (студент без ранга)
+		return &GetStudentRankResult{
+			Student: StudentRankDTO{
+				StudentID:   stud.ID,
+				DisplayName: stud.DisplayName,
+				Cohort:      string(cohort),
+				IsOnline:    stud.OnlineState == student.OnlineStateOnline,
+				// Остальные поля по умолчанию (Rank=0, XP=0 и т.д.)
+			},
+			Cohort:      string(cohort),
+			GeneratedAt: time.Now().UTC(),
+			Message:     "Ты пока не в рейтинге. Проявляй активность, чтобы появиться в лидерборде!",
+		}, nil
+	}
 
 	// Получаем общее количество студентов
 	totalCount, err := h.leaderboardRepo.GetTotalCount(ctx, cohort)
