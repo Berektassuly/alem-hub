@@ -107,26 +107,16 @@ type SyncError struct {
 // AlemClient defines the interface for fetching data from Alem Platform.
 type AlemClient interface {
 	// GetAllStudents fetches all students from the Alem Platform.
-	GetAllStudents(ctx context.Context) ([]AlemStudentData, error)
+	GetAllStudents(ctx context.Context) ([]alem.StudentDTO, error)
 
 	// GetStudentByLogin fetches a single student by login.
-	GetStudentByLogin(ctx context.Context, login string) (*AlemStudentData, error)
+	GetStudentByLogin(ctx context.Context, login string) (*alem.StudentDTO, error)
 
 	// GetBootcamp fetches bootcamp data.
 	GetBootcamp(ctx context.Context, bootcampID, cohortID string) (*alem.BootcampDTO, error)
 }
 
-// AlemStudentData represents student data from Alem Platform.
-type AlemStudentData struct {
-	Login          string
-	DisplayName    string
-	XP             int
-	Level          int
-	Cohort         string
-	CompletedTasks []string
-	LastActivityAt time.Time
-	IsOnline       bool
-}
+
 
 // NewSyncAllStudentsJob creates a new sync job.
 func NewSyncAllStudentsJob(
@@ -209,7 +199,7 @@ func (j *SyncAllStudentsJob) Run(ctx context.Context) error {
 	}
 
 	// Create a map for quick lookup
-	alemStudentMap := make(map[string]AlemStudentData, len(alemStudents))
+	alemStudentMap := make(map[string]alem.StudentDTO, len(alemStudents))
 	for _, as := range alemStudents {
 		alemStudentMap[as.Login] = as
 	}
@@ -277,7 +267,7 @@ func (j *SyncAllStudentsJob) getStudentsToSync(ctx context.Context) ([]*student.
 func (j *SyncAllStudentsJob) syncStudentsConcurrently(
 	ctx context.Context,
 	students []*student.Student,
-	alemData map[string]AlemStudentData,
+	alemData map[string]alem.StudentDTO,
 	stats *SyncStats,
 ) {
 	var (
@@ -351,7 +341,7 @@ func (j *SyncAllStudentsJob) syncStudentsConcurrently(
 func (j *SyncAllStudentsJob) syncStudent(
 	ctx context.Context,
 	s *student.Student,
-	alemData *AlemStudentData,
+	alemData *alem.StudentDTO,
 ) (updated bool, xpDelta int, err error) {
 	oldXP := int(s.CurrentXP)
 	newXP := student.XP(alemData.XP)
@@ -393,8 +383,8 @@ func (j *SyncAllStudentsJob) syncStudent(
 	}
 
 	// Update display name if changed
-	if alemData.DisplayName != "" && alemData.DisplayName != s.DisplayName {
-		s.DisplayName = alemData.DisplayName
+	if alemData.FirstName != "" && alemData.FirstName != s.DisplayName {
+		s.DisplayName = alemData.FirstName
 		updated = true
 	}
 

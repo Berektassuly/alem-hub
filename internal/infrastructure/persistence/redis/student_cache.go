@@ -8,7 +8,7 @@ import (
 	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 )
 
-// StudentCache implements student.Cache interface using generic Redis Cache.
+// StudentCache implements student.StudentCache interface using generic Redis Cache.
 type StudentCache struct {
 	cache *Cache
 }

@@ -633,7 +633,52 @@ func (c *Client) Reset() {
 	c.circuitBreaker.Reset()
 }
 
-// Mapper returns the client's mapper for domain transformations.
-func (c *Client) Mapper() *Mapper {
-	return c.mapper
+// GetAllStudents fetches all students from the Alem Platform, handling pagination.
+func (c *Client) GetAllStudents(ctx context.Context) ([]StudentDTO, error) {
+	var allStudents []StudentDTO
+	page := 1
+	perPage := 100
+
+	for {
+		students, meta, err := c.ListStudents(ctx, StudentsRequestDTO{
+			Page:    page,
+			PerPage: perPage,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("get all students page %d: %w", page, err)
+		}
+
+		allStudents = append(allStudents, students...)
+
+		if len(students) < perPage || (meta != nil && page >= meta.TotalPages) {
+			break
+		}
+		page++
+	}
+
+	return allStudents, nil
 }
+
+// GetBootcamp fetches the bootcamp data.
+func (c *Client) GetBootcamp(ctx context.Context, bootcampID, cohortID string) (*BootcampDTO, error) {
+	path := fmt.Sprintf("/bootcamp/%s?cohort_id=%s", bootcampID, cohortID)
+    
+	// NOTE: The previous context indicated this endpoint might not use the standard APIResponse wrapper.
+	// We will try without wrapper first based on the user's description, 
+	// or if it fails we can adjust. The user said: "The bootcamp endpoint returns a direct BootcampDTO object".
+	
+	// Create a new request directly since doRequest expects APIResponse wrapper or handles errors differently.
+	// But doRequest is robust. Let's try to reuse doSingleRequest with a custom struct if needed?
+	// If the API returns raw JSON of BootcampDTO, we can just pass &BootcampDTO to doRequest/doSingleRequest?
+	// doSingleRequest unmarshals into the result.
+	// But doSingleRequest CHECKS for error fields in the JSON.
+	
+	// Let's assume for now it behaves like a normal endpoint but we map directly to BootcampDTO.
+	var response BootcampDTO
+	err := c.doRequest(ctx, http.MethodGet, path, nil, &response)
+	if err != nil {
+		return nil, fmt.Errorf("get bootcamp: %w", err)
+	}
+	return &response, nil
+}
+

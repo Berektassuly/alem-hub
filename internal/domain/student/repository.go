@@ -299,8 +299,8 @@ type SyncError struct {
 // Для кеширования часто запрашиваемых данных.
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Cache определяет операции кеширования данных студентов.
-type Cache interface {
+// StudentCache определяет операции кеширования данных студентов.
+type StudentCache interface {
 	// Get получает студента из кеша.
 	Get(ctx context.Context, studentID string) (*Student, error)
 

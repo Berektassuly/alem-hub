@@ -113,13 +113,13 @@ type UpdatePreferencesResult struct {
 // UpdatePreferencesHandler handles the UpdatePreferencesCommand.
 type UpdatePreferencesHandler struct {
 	studentRepo student.Repository
-	cache       student.Cache // Optional cache for invalidation
+	cache       student.StudentCache // Optional cache for invalidation
 }
 
 // NewUpdatePreferencesHandler creates a new UpdatePreferencesHandler.
 func NewUpdatePreferencesHandler(
 	studentRepo student.Repository,
-	cache student.Cache,
+	cache student.StudentCache,
 ) *UpdatePreferencesHandler {
 	return &UpdatePreferencesHandler{
 		studentRepo: studentRepo,
@@ -329,13 +329,13 @@ type ToggleHelpAvailabilityResult struct {
 // ToggleHelpAvailabilityHandler handles the command.
 type ToggleHelpAvailabilityHandler struct {
 	studentRepo student.Repository
-	cache       student.Cache
+	cache       student.StudentCache
 }
 
 // NewToggleHelpAvailabilityHandler creates a new handler.
 func NewToggleHelpAvailabilityHandler(
 	studentRepo student.Repository,
-	cache student.Cache,
+	cache student.StudentCache,
 ) *ToggleHelpAvailabilityHandler {
 	return &ToggleHelpAvailabilityHandler{
 		studentRepo: studentRepo,
@@ -398,13 +398,13 @@ type ResetPreferencesCommand struct {
 // ResetPreferencesHandler handles the ResetPreferencesCommand.
 type ResetPreferencesHandler struct {
 	studentRepo student.Repository
-	cache       student.Cache
+	cache       student.StudentCache
 }
 
 // NewResetPreferencesHandler creates a new handler.
 func NewResetPreferencesHandler(
 	studentRepo student.Repository,
-	cache student.Cache,
+	cache student.StudentCache,
 ) *ResetPreferencesHandler {
 	return &ResetPreferencesHandler{
 		studentRepo: studentRepo,

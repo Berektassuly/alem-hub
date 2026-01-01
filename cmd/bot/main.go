@@ -30,7 +30,9 @@ import (
 	"github.com/alem-hub/alem-community-hub/internal/application/saga"
 
 	// Domain layer
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
 	// "github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 
 	// Infrastructure layer
 	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/alem"
@@ -193,8 +195,8 @@ func run(ctx context.Context) error {
 	// ─────────────────────────────────────────────────────────────────────────
 	var redisCache *redis.Cache
 	var redisOnlineTracker *redis.OnlineTracker
-	var leaderboardCache *redis.LeaderboardCache
-	var studentCache *redis.StudentCache
+	var leaderboardCache leaderboard.LeaderboardCache
+	var studentCache student.StudentCache
 
 	if cfg.RedisEnabled && cfg.RedisURL != "" {
 		log.Info("connecting to Redis...")

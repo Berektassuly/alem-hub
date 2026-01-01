@@ -24,10 +24,13 @@ import (
 	"time"
 
 	// Infrastructure layer
+	// Infrastructure layer
 	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/alem"
 	"github.com/alem-hub/alem-community-hub/internal/infrastructure/messaging"
 	"github.com/alem-hub/alem-community-hub/internal/infrastructure/persistence/postgres"
 	"github.com/alem-hub/alem-community-hub/internal/infrastructure/persistence/redis"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/scheduler"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/scheduler/jobs"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -65,6 +68,10 @@ type Config struct {
 	DailyDigestEnabled      bool
 	InactivityThresholdDays int
 
+	// Bootcamp Config
+	BootcampID string
+	CohortID   string
+
 	// Graceful Shutdown
 	ShutdownTimeout time.Duration
 }
@@ -89,6 +96,8 @@ func LoadConfig() (*Config, error) {
 		DailyDigestTime:         getEnv("DAILY_DIGEST_TIME", "21:00"),
 		DailyDigestEnabled:      getEnvBool("DAILY_DIGEST_ENABLED", true),
 		InactivityThresholdDays: getEnvInt("INACTIVITY_THRESHOLD_DAYS", 3),
+		BootcampID:              getEnv("ALEM_BOOTCAMP_ID", "7ed99bd0-87b2-4dbb-a97b-596c3f29c49b"),
+		CohortID:                getEnv("ALEM_COHORT_ID", "005ed731-6eb5-47df-8268-7011aeb3e4bf"),
 		ShutdownTimeout:         getEnvDuration("SHUTDOWN_TIMEOUT", 60*time.Second),
 	}
 
@@ -245,16 +254,65 @@ func run(ctx context.Context) error {
 	_ = alemClient
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// 9. WORKER LOOP (Simplified - scheduler needs full implementation)
+	// 9. ИНИЦИАЛИЗАЦИЯ SCHEDULER И ЗАПУСК JOBS
 	// ─────────────────────────────────────────────────────────────────────────
-	log.Info("starting worker main loop...")
-	log.Info("NOTE: Full scheduler/jobs implementation is TODO - worker will just stay alive for now")
+	log.Info("initializing scheduler...")
+	
+	schedulerConfig := scheduler.DefaultSchedulerConfig()
+	schedulerConfig.Logger = log
+	if loc, err := time.LoadLocation(cfg.AppTimezone); err == nil {
+		schedulerConfig.Timezone = loc
+	}
+	
+	sch := scheduler.NewScheduler(schedulerConfig)
+
+	// Job: SyncAllStudents
+	syncJob := jobs.NewSyncAllStudentsJob(
+		studentRepo,
+		progressRepo,
+		activityRepo,
+		syncRepo,
+		alemClient,
+		eventBus,
+		log,
+		jobs.SyncAllStudentsConfig{
+			BatchSize:     50,
+			RetryAttempts: 3,
+			BootcampID:    cfg.BootcampID,
+			CohortID:      cfg.CohortID,
+		},
+	)
+
+	// Register with interval from config
+	syncInterval := scheduler.NewIntervalSchedule(cfg.SyncStudentsInterval)
+	if err := sch.Register(syncJob, syncInterval); err != nil {
+		log.Error("failed to register sync job", "error", err)
+	}
+
+	// Start Scheduler
+	if err := sch.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start scheduler: %w", err)
+	}
+	defer func() {
+		log.Info("stopping scheduler...")
+		_ = sch.Stop()
+	}()
+
+	// Run sync immediately on startup
+	log.Info("triggering initial sync...")
+	go func() {
+		if _, err := sch.RunNow(ctx, syncJob.Name()); err != nil {
+			log.Error("initial sync failed", "error", err)
+		}
+	}()
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// 10. GRACEFUL SHUTDOWN
+	// 10. GRACEFUL SHUTDOWN (Worker Loop)
 	// ─────────────────────────────────────────────────────────────────────────
 	log.Info("Alem Community Hub Worker is running",
+		"env", cfg.AppEnv,
 		"timezone", cfg.AppTimezone,
+		"sync_interval", cfg.SyncStudentsInterval.String(),
 	)
 
 	// Ожидаем сигнал завершения
