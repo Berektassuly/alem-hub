@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"time"
 	"errors"
 
@@ -37,7 +38,36 @@ func (r *ActivityRepository) EndExpiredSessions(ctx context.Context, inactiveThr
 }
 
 func (r *ActivityRepository) SaveTaskCompletion(ctx context.Context, completion *activity.TaskCompletion) error {
-	return errors.New("not implemented")
+	query := `
+		INSERT INTO task_completions (
+			id, student_id, task_id, task_slug, status, xp_earned, 
+			attempts, time_spent, completed_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT(student_id, task_id) DO UPDATE SET
+			status = EXCLUDED.status,
+			xp_earned = GREATEST(task_completions.xp_earned, EXCLUDED.xp_earned),
+			completed_at = EXCLUDED.completed_at,
+			attempts = task_completions.attempts + 1
+	`
+	
+	// We use TaskID for both task_id and task_slug as the domain entity normalizes this.
+	// We assume status is "completed" as this entity represents a completion.
+	_, err := r.conn.Exec(ctx, query,
+		completion.ID,
+		completion.StudentID,
+		completion.TaskID,
+		completion.TaskID, // Using TaskID as slug
+		"completed",       // Hardcoded status
+		completion.XPEarned,
+		completion.Attempts,
+		int64(completion.TimeSpent.Seconds()),
+		completion.CompletedAt,
+		time.Now(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save task completion: %w", err)
+	}
+	return nil
 }
 
 func (r *ActivityRepository) GetTaskCompletion(ctx context.Context, id string) (*activity.TaskCompletion, error) {
@@ -53,7 +83,13 @@ func (r *ActivityRepository) GetStudentsWhoCompletedTask(ctx context.Context, ta
 }
 
 func (r *ActivityRepository) HasStudentCompletedTask(ctx context.Context, studentID activity.StudentID, taskID activity.TaskID) (bool, error) {
-	return false, errors.New("not implemented")
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM task_completions WHERE student_id = $1 AND task_id = $2 AND status IN ('passed', 'completed', 'success'))`
+	err := r.conn.QueryRow(ctx, query, studentID, taskID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check completion: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *ActivityRepository) SaveActivity(ctx context.Context, act *activity.Activity) error {

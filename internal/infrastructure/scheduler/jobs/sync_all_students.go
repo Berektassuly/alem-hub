@@ -6,6 +6,8 @@ package jobs
 import (
 	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
 	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/alem"
 	"context"
 	"fmt"
 	"log/slog"
@@ -28,10 +30,12 @@ type SyncAllStudentsJob struct {
 	// Dependencies
 	studentRepo    student.Repository
 	progressRepo   student.ProgressRepository
+	activityRepo   activity.Repository
 	syncRepo       student.SyncRepository
 	alemClient     AlemClient
 	eventPublisher shared.EventPublisher
 	logger         *slog.Logger
+	mapper         *alem.Mapper
 
 	// Configuration
 	config SyncAllStudentsConfig
@@ -59,6 +63,10 @@ type SyncAllStudentsConfig struct {
 
 	// SkipRecentlySynced skips students synced within MinSyncInterval.
 	SkipRecentlySynced bool
+
+	// Bootcamp Config
+	BootcampID string
+	CohortID   string
 }
 
 // DefaultSyncAllStudentsConfig returns sensible defaults.
@@ -103,6 +111,9 @@ type AlemClient interface {
 
 	// GetStudentByLogin fetches a single student by login.
 	GetStudentByLogin(ctx context.Context, login string) (*AlemStudentData, error)
+
+	// GetBootcamp fetches bootcamp data.
+	GetBootcamp(ctx context.Context, bootcampID, cohortID string) (*alem.BootcampDTO, error)
 }
 
 // AlemStudentData represents student data from Alem Platform.
@@ -121,6 +132,7 @@ type AlemStudentData struct {
 func NewSyncAllStudentsJob(
 	studentRepo student.Repository,
 	progressRepo student.ProgressRepository,
+	activityRepo activity.Repository,
 	syncRepo student.SyncRepository,
 	alemClient AlemClient,
 	eventPublisher shared.EventPublisher,
@@ -137,11 +149,13 @@ func NewSyncAllStudentsJob(
 	return &SyncAllStudentsJob{
 		studentRepo:    studentRepo,
 		progressRepo:   progressRepo,
+		activityRepo:   activityRepo,
 		syncRepo:       syncRepo,
 		alemClient:     alemClient,
 		eventPublisher: eventPublisher,
 		logger:         logger,
 		config:         config,
+		mapper:         alem.NewMapper(),
 	}
 }
 
@@ -407,7 +421,70 @@ func (j *SyncAllStudentsJob) syncStudent(
 		)
 	}
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// Sync Bootcamp Progression
+	// ─────────────────────────────────────────────────────────────────────────
+	if j.config.BootcampID != "" {
+		if err := j.syncBootcampProgress(ctx, s); err != nil {
+			j.logger.Error("failed to sync bootcamp progress",
+				"student_id", s.ID,
+				"error", err,
+			)
+			// Don't fail the whole sync for this, just log it
+		}
+	}
+
 	return updated, xpDelta, nil
+}
+
+// syncBootcampProgress fetches and processes bootcamp data.
+func (j *SyncAllStudentsJob) syncBootcampProgress(ctx context.Context, s *student.Student) error {
+	// NOTE: GetBootcamp uses the CLIENT'S auth token.
+	// If the client is authenticated as a specific user, it returns THAT user's progress.
+	// If the client uses an admin token, behavior depends on the API.
+	// We assume for now we are running in a context where we can get this data.
+	// Ideally, we would impersonate the student or use an admin endpoint.
+	
+	bootcamp, err := j.alemClient.GetBootcamp(ctx, j.config.BootcampID, j.config.CohortID)
+	if err != nil {
+		return fmt.Errorf("get bootcamp: %w", err)
+	}
+
+	completions := j.mapper.FlattenBootcampToCompletions(bootcamp, s.ID)
+	
+	newCompletions := 0
+	for _, dto := range completions {
+		// Only save successful completions OR if we want to track everything
+		if !dto.IsSuccessful() && dto.XPEarned == 0 {
+			continue
+		}
+
+		// Convert to domain entity
+		// We need to map TaskCompletionDTO (from alem package) to domain TaskCompletion
+		// BUT wait, FlattenBootcampToCompletions returns alem.TaskCompletionDTO
+		// We need to convert it to activity.TaskCompletion using the Mapper!
+		
+		tc, err := j.mapper.TaskCompletionFromDTO(&dto)
+		if err != nil {
+			continue 
+		}
+
+		// Check if already exists? Repository Save should handle upsert or we check first
+		exists, _ := j.activityRepo.HasStudentCompletedTask(ctx, activity.StudentID(s.ID), activity.TaskID(tc.TaskID))
+		if !exists {
+			if err := j.activityRepo.SaveTaskCompletion(ctx, tc); err != nil {
+				j.logger.Warn("failed to save task completion", "task_id", tc.TaskID, "error", err)
+			} else {
+				newCompletions++
+			}
+		}
+	}
+
+	if newCompletions > 0 {
+		j.logger.Info("synced bootcamp completions", "student_id", s.ID, "count", newCompletions)
+	}
+
+	return nil
 }
 
 // emitSyncCompletedEvent publishes a sync completed event.

@@ -204,11 +204,15 @@ func run(ctx context.Context) error {
 	studentRepo := postgres.NewStudentRepository(dbConn)
 	progressRepo := postgres.NewProgressRepository(dbConn)
 	leaderboardRepo := postgres.NewLeaderboardRepository(dbConn)
+	syncRepo := postgres.NewSyncRepository(dbConn)
+	activityRepo := postgres.NewActivityRepository(dbConn)
 
 	// Suppress unused variable warnings
 	_ = studentRepo
 	_ = progressRepo
 	_ = leaderboardRepo
+	_ = syncRepo
+	_ = activityRepo
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// 7. ИНИЦИАЛИЗАЦИЯ EVENT BUS

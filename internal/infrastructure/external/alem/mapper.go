@@ -462,6 +462,55 @@ func (e *MappingError) Unwrap() error {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// BOOTCAMP MAPPING
+// ══════════════════════════════════════════════════════════════════════════════
+
+// FlattenBootcampToCompletions extracts completed tasks from the bootcamp graph.
+func (m *Mapper) FlattenBootcampToCompletions(bootcamp *BootcampDTO, studentID string) []TaskCompletionDTO {
+	if bootcamp == nil {
+		return nil
+	}
+
+	var completions []TaskCompletionDTO
+
+	var visit func(nodes []BootcampNodeDTO)
+	visit = func(nodes []BootcampNodeDTO) {
+		for _, node := range nodes {
+			// Recursively visit children
+			if len(node.Children) > 0 {
+				visit(node.Children)
+				continue
+			}
+
+			// It's a leaf node. Check if it represents a completed task/activity.
+			// We consider it a task if it has an ID and (UserXP > 0 or Status is COMPLETED).
+			if node.ID != "" && (node.UserXP > 0 || strings.ToUpper(node.Status) == "COMPLETED") {
+				status := strings.ToLower(node.Status)
+				if status == "completed" {
+					status = "passed" // Normalize to standard status
+				}
+
+				completions = append(completions, TaskCompletionDTO{
+					// Generate a synthetic ID for the completion record
+					ID:        "bootcamp_" + node.ID,
+					StudentID: studentID,
+					TaskID:    node.ID,
+					TaskSlug:  node.Title,
+					Status:    status,
+					XPEarned:  node.UserXP,
+					// We don't have exact completion time or duration in the graph node
+					// We could use EndAt if Status is COMPLETED, or Now()
+					CompletedAt: &node.EndAt,
+				})
+			}
+		}
+	}
+
+	visit(bootcamp.Children)
+	return completions
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // REVERSE MAPPING (Domain to DTO) - For webhooks/API responses
 // ══════════════════════════════════════════════════════════════════════════════
 

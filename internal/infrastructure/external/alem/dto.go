@@ -528,3 +528,35 @@ type TaskCompletionsRequestDTO struct {
 	// PerPage is the number of items per page
 	PerPage int `json:"per_page,omitempty"`
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BOOTCAMP DTOs
+// ══════════════════════════════════════════════════════════════════════════════
+
+// BootcampDTO represents the root bootcamp data structure.
+type BootcampDTO struct {
+	ID        string            `json:"id"`
+	Status    string            `json:"status"`
+	StartAt   time.Time         `json:"start_at"`
+	EndAt     time.Time         `json:"end_at"`
+	Title     string            `json:"title"`
+	Type      string            `json:"type"`
+	TotalXP   int               `json:"total_xp"`
+	UserXP    int               `json:"user_xp"`
+	Children  []BootcampNodeDTO `json:"children"`
+}
+
+// BootcampNodeDTO represents a node in the bootcamp graph (week, story, etc.).
+type BootcampNodeDTO struct {
+	ID       string            `json:"id,omitempty"`
+	Status   string            `json:"status"`
+	StartAt  time.Time         `json:"start_at"`
+	EndAt    time.Time         `json:"end_at"`
+	Index    int               `json:"index"`
+	Title    string            `json:"title"`
+	Type     string            `json:"type"`
+	TotalXP  int               `json:"total_xp"`
+	UserXP   int               `json:"user_xp"`
+	Children []BootcampNodeDTO `json:"children,omitempty"`
+}
+
