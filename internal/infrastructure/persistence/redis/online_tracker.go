@@ -78,8 +78,6 @@ type OnlineInfo struct {
 	// StudentID is the unique identifier of the student.
 	StudentID string `json:"student_id"`
 
-
-
 	// DisplayName is the student's display name.
 	DisplayName string `json:"display_name,omitempty"`
 
@@ -155,8 +153,6 @@ type OnlineEvent struct {
 
 	// StudentID is the student's unique identifier.
 	StudentID string `json:"student_id"`
-
-
 
 	// PreviousState is the state before the change (if applicable).
 	PreviousState OnlineState `json:"previous_state,omitempty"`

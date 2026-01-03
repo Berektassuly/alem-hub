@@ -4,9 +4,6 @@
 package http
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/application/query"
-	"github.com/alem-hub/alem-community-hub/internal/interface/http/handlers"
-	"github.com/alem-hub/alem-community-hub/pkg/logger"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/interface/http/handlers"
+	"github.com/alem-hub/alem-community-hub/pkg/logger"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

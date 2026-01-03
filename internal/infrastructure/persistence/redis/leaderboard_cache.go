@@ -893,9 +893,9 @@ func (l *LeaderboardCache) SetCachedRank(ctx context.Context, entry *leaderboard
 	if err := l.UpdateEntry(ctx, localEntry, string(entry.Cohort)); err != nil {
 		return err
 	}
-	
+
 	if ttl > 0 && ttl != TTLLeaderboardCache {
-		// Note: UpdateEntry refreshes keys to default TTL. 
+		// Note: UpdateEntry refreshes keys to default TTL.
 		// Setting custom TTL for single entry is tricky as sorted set is shared.
 		// We'll trust the default or refresh whole cohort TTL.
 		// But interface asks for this. We'll ignore TTL for sorted set integrity or apply to hash key only?
@@ -914,7 +914,7 @@ func (l *LeaderboardCache) toDomainEntry(e *LeaderboardEntry) *leaderboard.Leade
 	if e == nil {
 		return nil
 	}
-	
+
 	// Create domain entry using constructor if possible, or direct struct initialization
 	// Direct initialization to avoid re-validation errors on valid cache data
 	return &leaderboard.LeaderboardEntry{
@@ -951,7 +951,6 @@ func (l *LeaderboardCache) fromDomainEntry(e *leaderboard.LeaderboardEntry) Lead
 		LastActiveAt:       e.UpdatedAt,
 	}
 }
-
 
 // GetXPDelta calculates the XP needed to reach a target rank.
 func (l *LeaderboardCache) GetXPDelta(ctx context.Context, studentID string, targetRank int64, cohort string) (int64, error) {

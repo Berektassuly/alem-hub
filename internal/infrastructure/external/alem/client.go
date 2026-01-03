@@ -118,37 +118,37 @@ type AuthResult struct {
 func (c *Client) Authenticate(ctx context.Context, email, password string) (*AuthResult, error) {
 	// Build the request manually since we need Basic Auth header
 	fullURL := c.config.BaseURL + "/api/v1/auth/signin"
-	
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	
+
 	// Set Basic Authentication header
 	credentials := email + ":" + password
 	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
 	req.Header.Set("Authorization", "Basic "+encoded)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	// Execute request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
-	
+
 	// Check status code
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("auth failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
-	
+
 	// Parse response - Alem returns {"access_token": "...", "verified": true}
 	var authResponse struct {
 		AccessToken string `json:"access_token"`
@@ -157,18 +157,18 @@ func (c *Client) Authenticate(ctx context.Context, email, password string) (*Aut
 	if err := json.Unmarshal(respBody, &authResponse); err != nil {
 		return nil, fmt.Errorf("parse auth response: %w", err)
 	}
-	
+
 	// Create token from access_token
 	token := TokenDTO{
 		AccessToken: authResponse.AccessToken,
 		TokenType:   "Bearer",
 	}
-	
+
 	// Store token for subsequent requests
 	c.tokenMu.Lock()
 	c.token = &token
 	c.tokenMu.Unlock()
-	
+
 	return &AuthResult{
 		Token:   &token,
 		Student: nil, // Alem signin doesn't return student data directly
@@ -687,17 +687,17 @@ func (c *Client) GetAllStudents(ctx context.Context) ([]StudentDTO, error) {
 // GetBootcamp fetches the bootcamp data.
 func (c *Client) GetBootcamp(ctx context.Context, bootcampID, cohortID string) (*BootcampDTO, error) {
 	path := fmt.Sprintf("/api/v1/bootcamp/%s?cohort_id=%s", bootcampID, cohortID)
-    
+
 	// NOTE: The previous context indicated this endpoint might not use the standard APIResponse wrapper.
-	// We will try without wrapper first based on the user's description, 
+	// We will try without wrapper first based on the user's description,
 	// or if it fails we can adjust. The user said: "The bootcamp endpoint returns a direct BootcampDTO object".
-	
+
 	// Create a new request directly since doRequest expects APIResponse wrapper or handles errors differently.
 	// But doRequest is robust. Let's try to reuse doSingleRequest with a custom struct if needed?
 	// If the API returns raw JSON of BootcampDTO, we can just pass &BootcampDTO to doRequest/doSingleRequest?
 	// doSingleRequest unmarshals into the result.
 	// But doSingleRequest CHECKS for error fields in the JSON.
-	
+
 	// Let's assume for now it behaves like a normal endpoint but we map directly to BootcampDTO.
 	var response BootcampDTO
 	err := c.doRequest(ctx, http.MethodGet, path, nil, &response)
@@ -706,4 +706,3 @@ func (c *Client) GetBootcamp(ctx context.Context, bootcampID, cohortID string) (
 	}
 	return &response, nil
 }
-

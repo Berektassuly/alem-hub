@@ -2,7 +2,6 @@
 package messaging
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +9,8 @@ import (
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

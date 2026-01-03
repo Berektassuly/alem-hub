@@ -2,12 +2,13 @@
 package postgres
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 
 	"github.com/jackc/pgx/v5"
 )

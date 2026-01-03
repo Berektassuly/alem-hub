@@ -56,10 +56,10 @@ func (r *SyncRepository) GetStudentsToSync(ctx context.Context, olderThan time.D
 	defer rows.Close()
 
 	// We can reuse scanStudents from student_repo.go if we make it public or duplicate logic.
-	// Since we are in the same package 'postgres', we can access unexported methods of other types? 
+	// Since we are in the same package 'postgres', we can access unexported methods of other types?
 	// No, scanStudents is a method on *StudentRepository. We can't call it easily on *SyncRepository.
 	// So we duplicate the scan logic or refactor. Duplication is safer for now to avoid breaking existing code.
-	
+
 	var students []*student.Student
 	for rows.Next() {
 		var s student.Student
@@ -98,14 +98,16 @@ func (r *SyncRepository) GetStudentsToSync(ctx context.Context, olderThan time.D
 		s.Cohort = student.Cohort(cohort)
 		s.Status = student.Status(status)
 		s.OnlineState = student.OnlineState(onlineState)
-		
+
 		// Map preferences if needed, logic duplicated from student_repo
 		s.Preferences = student.DefaultNotificationPreferences()
 		if len(prefsJSON) > 0 {
 			var m map[string]interface{}
 			if err := json.Unmarshal(prefsJSON, &m); err == nil {
 				// Simplified mapping
-				if v, ok := m["rank_changes"].(bool); ok { s.Preferences.RankChanges = v }
+				if v, ok := m["rank_changes"].(bool); ok {
+					s.Preferences.RankChanges = v
+				}
 			}
 		}
 

@@ -2,15 +2,16 @@
 package jobs
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
-	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
-	"github.com/alem-hub/alem-community-hub/internal/domain/social"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"log/slog"
 	"sync/atomic"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

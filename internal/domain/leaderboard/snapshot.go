@@ -271,7 +271,7 @@ type SnapshotDiff struct {
 
 // TopChange представляет изменение в топе (вход/выход).
 type TopChange struct {
-	StudentID  string
+	StudentID string
 
 	OldRank    Rank
 	NewRank    Rank

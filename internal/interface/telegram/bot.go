@@ -7,6 +7,13 @@
 package telegram
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
 	"github.com/alem-hub/alem-community-hub/internal/application/command"
 	"github.com/alem-hub/alem-community-hub/internal/application/query"
 	"github.com/alem-hub/alem-community-hub/internal/application/saga"
@@ -16,12 +23,6 @@ import (
 	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/handler/callback"
 	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/middleware"
 	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
-	"context"
-	"errors"
-	"fmt"
-	"log/slog"
-	"sync"
-	"time"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -271,16 +272,16 @@ func NewBot(config BotConfig, deps BotDependencies) (*Bot, error) {
 
 	// Create bot
 	bot := &Bot{
-		config:              config,
-		client:              client,
-		router:              router,
-		logger:              config.Logger,
-		authMiddleware:      authMiddleware,
-		rateLimiter: rateLimiter,
-		recoveryMiddleware:  recoveryMiddleware,
-		metricsMiddleware:   metricsMiddleware,
-		stopCh:              make(chan struct{}),
-		updateSem:           make(chan struct{}, config.MaxConcurrentUpdates),
+		config:             config,
+		client:             client,
+		router:             router,
+		logger:             config.Logger,
+		authMiddleware:     authMiddleware,
+		rateLimiter:        rateLimiter,
+		recoveryMiddleware: recoveryMiddleware,
+		metricsMiddleware:  metricsMiddleware,
+		stopCh:             make(chan struct{}),
+		updateSem:          make(chan struct{}, config.MaxConcurrentUpdates),
 		stats: &BotStats{
 			CommandsCount: make(map[string]int64),
 		},

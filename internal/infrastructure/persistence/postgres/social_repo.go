@@ -2,8 +2,8 @@ package postgres
 
 import (
 	"context"
-	"time"
 	"errors"
+	"time"
 
 	"github.com/alem-hub/alem-community-hub/internal/domain/social"
 )

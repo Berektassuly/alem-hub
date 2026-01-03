@@ -7,12 +7,13 @@
 package projections
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
 	"context"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

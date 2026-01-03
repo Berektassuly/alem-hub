@@ -2,11 +2,12 @@
 package http
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/application/query"
-	"github.com/alem-hub/alem-community-hub/pkg/logger"
 	"encoding/json"
 	"io"
 	"net/http"
+
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/pkg/logger"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

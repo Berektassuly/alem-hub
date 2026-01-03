@@ -55,9 +55,9 @@ func (s *StudentCache) Delete(ctx context.Context, studentID string) error {
 // GetByTelegramID gets a student from cache by Telegram ID.
 // This often requires a secondary index key like "student:telegram:{id}" -> studentID.
 // For now, if we don't have secondary index management in Set, we might miss this.
-// Assuming we store full object or ID pointer. 
+// Assuming we store full object or ID pointer.
 // A common pattern: "student:telegram:123" -> "student_uuid". Then 2nd lookup.
-// For simplicity here, let's assume we might store the student object directly under "student:telegram:123" too 
+// For simplicity here, let's assume we might store the student object directly under "student:telegram:123" too
 // or implement the lookup.
 func (s *StudentCache) GetByTelegramID(ctx context.Context, telegramID student.TelegramID) (*student.Student, error) {
 	key := fmt.Sprintf("%s:telegram:%d", PrefixStudent, telegramID)

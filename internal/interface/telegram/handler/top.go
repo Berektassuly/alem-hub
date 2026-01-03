@@ -2,10 +2,11 @@
 package handler
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/application/query"
-	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"fmt"
+
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

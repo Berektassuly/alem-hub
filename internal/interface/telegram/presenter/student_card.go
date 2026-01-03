@@ -4,11 +4,12 @@
 package presenter
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/application/query"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/application/query"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -113,8 +114,6 @@ func (p *StudentCardPresenter) formatHeader(dto *query.StudentRankDTO) string {
 
 	// Имя
 	sb.WriteString(fmt.Sprintf("<b>%s</b>", p.escapeHTML(dto.DisplayName)))
-
-
 
 	// Когорта
 	if dto.Cohort != "" {
@@ -416,8 +415,6 @@ func (p *StudentCardPresenter) FormatOtherStudentProfile(
 		sb.WriteString("🟢 ")
 	}
 	sb.WriteString(fmt.Sprintf("<b>%s</b>", p.escapeHTML(dto.DisplayName)))
-
-
 
 	sb.WriteString("\n\n")
 

@@ -2,9 +2,9 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
-	"errors"
 
 	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
 )
@@ -49,7 +49,7 @@ func (r *ActivityRepository) SaveTaskCompletion(ctx context.Context, completion 
 			completed_at = EXCLUDED.completed_at,
 			attempts = task_completions.attempts + 1
 	`
-	
+
 	// We use TaskID for both task_id and task_slug as the domain entity normalizes this.
 	// We assume status is "completed" as this entity represents a completion.
 	_, err := r.conn.Exec(ctx, query,

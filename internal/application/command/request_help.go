@@ -2,14 +2,15 @@
 package command
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
-	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
-	"github.com/alem-hub/alem-community-hub/internal/domain/social"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -103,8 +104,6 @@ type MatchedHelperInfo struct {
 
 	// DisplayName is the helper's display name.
 	DisplayName string
-
-
 
 	// TelegramID is the helper's Telegram ID.
 	TelegramID int64

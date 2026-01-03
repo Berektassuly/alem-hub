@@ -4,7 +4,6 @@
 package telegram
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,6 +15,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

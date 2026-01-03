@@ -3,13 +3,14 @@
 package callback
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
 	"github.com/alem-hub/alem-community-hub/internal/application/command"
 	"github.com/alem-hub/alem-community-hub/internal/domain/social"
 	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
-	"context"
-	"fmt"
-	"strings"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

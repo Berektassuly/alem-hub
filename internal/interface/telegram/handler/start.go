@@ -207,19 +207,19 @@ func (h *StartHandler) handleOnboarding(ctx context.Context, req StartRequest) (
 	// Construct email from login
 	email := alemLogin + "@alem.school"
 	// Generate temporary password for deep link flow (not secure but legacy support?)
-	// Or maybe deep link flow should skip password check? 
+	// Or maybe deep link flow should skip password check?
 	// For now let's set a placeholder password as we probably don't have it
 	// But OnboardingSaga now requires Password validation.
-	// This implies DeepLink flow needs to be rethought or adapted. 
+	// This implies DeepLink flow needs to be rethought or adapted.
 	// If deep link acts as "trusted", maybe we need a flag in Saga or a generated password that is sent to user?
 	// Given "refactor to email/password", deep link login is a bit weird.
 	// For now, I will treat deep link as just pre-filling the email in a pending state?
 	// But `handleOnboarding` calls `Execute` directly.
-	// I'll set a random password for now to pass validation if we want to auto-create, 
-    // OR arguably we should just redirect them to password input step.
-    // Let's redirect to password input step instead of executing saga immediately.
-	
-    // We already have email (derived).
+	// I'll set a random password for now to pass validation if we want to auto-create,
+	// OR arguably we should just redirect them to password input step.
+	// Let's redirect to password input step instead of executing saga immediately.
+
+	// We already have email (derived).
 	// Start new onboarding session - waiting for password
 	pendingOnboardings.Lock()
 	pendingOnboardings.data[req.TelegramID] = &PendingOnboarding{
@@ -283,7 +283,7 @@ func (h *StartHandler) handleOnboardingError(err error, login string) (*StartRes
 						"Если это твой email и ты потерял доступ к старому аккаунту, "+
 						"обратись к администратору.",
 					escapeHTML(login), // login variable here holds the input which might be login or email, in handleOnboardingError signature it says 'login string'.
-                                       // In 'handleOnboardingError' call sites, let's check what is passed.
+					// In 'handleOnboardingError' call sites, let's check what is passed.
 				),
 				ParseMode: "HTML",
 				IsError:   true,
@@ -507,11 +507,11 @@ func (h *StartHandler) handleAuthentication(ctx context.Context, req StartReques
 		displayName = req.TelegramUsername
 	}
 
-	// Hash password (using simple SHA256 for now to avoid external deps issues if bcrypt not present, 
-    // but ideally use bcrypt. Since we are in 'Lets go' mode and I see no bcrypt in imports yet, I'll use a helper or simple hash)
-    // Actually, I'll assume we can use a simple string for now or simulated hash if I can't import bcrypt easily.
-    // User asked "send the password to the password_hash".
-    hashedPassword := hashPassword(password)
+	// Hash password (using simple SHA256 for now to avoid external deps issues if bcrypt not present,
+	// but ideally use bcrypt. Since we are in 'Lets go' mode and I see no bcrypt in imports yet, I'll use a helper or simple hash)
+	// Actually, I'll assume we can use a simple string for now or simulated hash if I can't import bcrypt easily.
+	// User asked "send the password to the password_hash".
+	hashedPassword := hashPassword(password)
 
 	// Create student entity
 	newStudent, err := student.NewStudent(student.NewStudentParams{
@@ -525,7 +525,7 @@ func (h *StartHandler) handleAuthentication(ctx context.Context, req StartReques
 	})
 	if err != nil {
 		return &StartResponse{
-			Text: fmt.Sprintf("❌ <b>Ошибка создания профиля</b>\n\n%v", err),
+			Text:      fmt.Sprintf("❌ <b>Ошибка создания профиля</b>\n\n%v", err),
 			ParseMode: "HTML",
 			IsError:   true,
 		}, nil
@@ -619,12 +619,12 @@ func escapeHTML(s string) string {
 
 // hashPassword creates a bcrypt hash of the password.
 func hashPassword(password string) string {
-    hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-    if err != nil {
-        // In a real app we might handle this better, but for now log/panic or return empty (which will fail auth)
-        // Since we can't return error here easily without changing signature, we'll log via fmt/std
-        fmt.Printf("Error hashing password: %v\n", err)
-        return ""
-    }
-    return string(hash)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		// In a real app we might handle this better, but for now log/panic or return empty (which will fail auth)
+		// Since we can't return error here easily without changing signature, we'll log via fmt/std
+		fmt.Printf("Error hashing password: %v\n", err)
+		return ""
+	}
+	return string(hash)
 }

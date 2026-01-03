@@ -2,14 +2,15 @@
 package projections
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
-	"github.com/alem-hub/alem-community-hub/internal/domain/social"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/social"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -30,8 +31,6 @@ type StudentCardView struct {
 
 	// byTelegramID indexes cards by Telegram ID for fast lookup.
 	byTelegramID map[int64]*StudentCard
-
-
 
 	// lastUpdated is the timestamp of the last update.
 	lastUpdated time.Time
@@ -511,8 +510,6 @@ func (sv *StudentCardView) GetByTelegramID(ctx context.Context, telegramID int64
 
 	return nil, fmt.Errorf("projections: student card not found for Telegram ID %d", telegramID)
 }
-
-
 
 // GetAll returns all student cards with pagination.
 func (sv *StudentCardView) GetAll(ctx context.Context, offset, limit int) ([]*StudentCard, error) {

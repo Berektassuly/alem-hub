@@ -4,10 +4,6 @@
 package jobs
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
-	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
-	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/alem"
 	"context"
 	"fmt"
 	"log/slog"
@@ -15,6 +11,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/activity"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/alem"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -118,8 +119,6 @@ type AlemClient interface {
 	// GetStudentTaskCompletions fetches all task completions for a specific student.
 	GetStudentTaskCompletions(ctx context.Context, studentID string) ([]alem.TaskCompletionDTO, error)
 }
-
-
 
 // NewSyncAllStudentsJob creates a new sync job.
 func NewSyncAllStudentsJob(
@@ -299,7 +298,7 @@ func (j *SyncAllStudentsJob) syncStudentBootcamp(
 		"bootcamp_id", j.config.BootcampID,
 		"cohort_id", j.config.CohortID,
 	)
-	
+
 	bootcamp, err := j.alemClient.GetBootcamp(ctx, j.config.BootcampID, j.config.CohortID)
 	if err != nil {
 		// Log the actual error - bootcamp endpoint requires authentication
@@ -427,12 +426,12 @@ func (j *SyncAllStudentsJob) syncStudentsConcurrently(
 			defer func() { <-semaphore }() // Release
 
 			// Find Alem data for this student
-            // Derive login from email (assuming email is login@alem.school or similar)
-            login := ""
-            if idx := strings.Index(st.Email, "@"); idx > 0 {
-                login = st.Email[:idx]
-            }
-            
+			// Derive login from email (assuming email is login@alem.school or similar)
+			login := ""
+			if idx := strings.Index(st.Email, "@"); idx > 0 {
+				login = st.Email[:idx]
+			}
+
 			alemStudent, found := alemData[login]
 			if !found {
 				mu.Lock()
@@ -571,7 +570,7 @@ func (j *SyncAllStudentsJob) syncBootcampProgress(ctx context.Context, s *studen
 	if err != nil {
 		return fmt.Errorf("get student task completions: %w", err)
 	}
-	
+
 	newCompletions := 0
 	for _, dto := range completions {
 		// Only save successful completions OR if we want to track everything
@@ -582,7 +581,7 @@ func (j *SyncAllStudentsJob) syncBootcampProgress(ctx context.Context, s *studen
 		// Convert to domain entity
 		tc, err := j.mapper.TaskCompletionFromDTO(&dto)
 		if err != nil {
-			continue 
+			continue
 		}
 
 		// Check if already exists? Repository Save should handle upsert or we check first
@@ -647,11 +646,11 @@ func (j *SyncAllStudentsJob) SyncSingleStudent(ctx context.Context, studentID st
 	}
 
 	// Fetch fresh data from Alem
-    login := ""
-    if idx := strings.Index(s.Email, "@"); idx > 0 {
-        login = s.Email[:idx]
-    }
-    
+	login := ""
+	if idx := strings.Index(s.Email, "@"); idx > 0 {
+		login = s.Email[:idx]
+	}
+
 	alemData, err := j.alemClient.GetStudentByLogin(ctx, login)
 	if err != nil {
 		return fmt.Errorf("failed to fetch from Alem API: %w", err)

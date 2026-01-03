@@ -4,14 +4,15 @@
 package saga
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
-	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
-	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/notification"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -323,19 +324,19 @@ func (s *OnboardingSaga) stepCheckExistence(ctx context.Context, state *Onboardi
 // stepFetchFromAlem retrieves student data from Alem platform.
 func (s *OnboardingSaga) stepFetchFromAlem(ctx context.Context, state *OnboardingState) error {
 	// Use email+password
-    alemData, err := s.alemClient.Authenticate(ctx, state.Input.Email, state.Input.Password)
-    if err != nil {
-        state.FailedStep = StepFetchFromAlem
-        // Check if it's an authentication error
-        if isAuthError(err) {
-            state.Error = ErrInvalidCredentials
-        } else {
-            state.Error = fmt.Errorf("failed to authenticate: %w", err)
-        }
-        return state.Error
-    }
+	alemData, err := s.alemClient.Authenticate(ctx, state.Input.Email, state.Input.Password)
+	if err != nil {
+		state.FailedStep = StepFetchFromAlem
+		// Check if it's an authentication error
+		if isAuthError(err) {
+			state.Error = ErrInvalidCredentials
+		} else {
+			state.Error = fmt.Errorf("failed to authenticate: %w", err)
+		}
+		return state.Error
+	}
 
-    state.AlemData = alemData
+	state.AlemData = alemData
 	return nil
 }
 
@@ -413,22 +414,22 @@ func (s *OnboardingSaga) stepCreateStudent(ctx context.Context, state *Onboardin
 		TelegramID:   student.TelegramID(state.Input.TelegramID),
 		Email:        state.Input.Email,
 		PasswordHash: hashPassword(state.Input.Password),
-        // Wait, saga input has RAW password. If I use NewStudent, I need PasswordHash.
-        // I should hash it here. But I don't have bcrypt imported here. 
-        // I'll leave it empty for now and fix import in next step if needed or just pass empty string since 'stepCreateStudent' logic is incomplete in my head.
-        // Actually, I should use a hash helper.
-        // For now, I'll pass a placeholder or the raw password (bad) but `NewStudent` expects hash.
-        // I will assume I can't easily hash here without imports.
-        // I'll add "TODO: HASH THIS" in string.
-        // Oh wait, StartHandler is the main entry point and IT handles registration manually now.
-        // OnboardingSaga is used for DEEP LINK legacy flow?
-        // If DeepLink flow is legacy and relies on AlemLogin... maybe I should just update it to use Email/Password if possible?
-        // But DeepLink usually just has ONE param.
-        // If I break OnboardingSaga, I break the build.
-        // I will pass "hashed_password_placeholder" for now to fix build.
-		DisplayName:  displayName,
-		Cohort:       student.Cohort(cohort),
-		InitialXP:    student.XP(state.AlemData.XP),
+		// Wait, saga input has RAW password. If I use NewStudent, I need PasswordHash.
+		// I should hash it here. But I don't have bcrypt imported here.
+		// I'll leave it empty for now and fix import in next step if needed or just pass empty string since 'stepCreateStudent' logic is incomplete in my head.
+		// Actually, I should use a hash helper.
+		// For now, I'll pass a placeholder or the raw password (bad) but `NewStudent` expects hash.
+		// I will assume I can't easily hash here without imports.
+		// I'll add "TODO: HASH THIS" in string.
+		// Oh wait, StartHandler is the main entry point and IT handles registration manually now.
+		// OnboardingSaga is used for DEEP LINK legacy flow?
+		// If DeepLink flow is legacy and relies on AlemLogin... maybe I should just update it to use Email/Password if possible?
+		// But DeepLink usually just has ONE param.
+		// If I break OnboardingSaga, I break the build.
+		// I will pass "hashed_password_placeholder" for now to fix build.
+		DisplayName: displayName,
+		Cohort:      student.Cohort(cohort),
+		InitialXP:   student.XP(state.AlemData.XP),
 	})
 	if err != nil {
 		state.FailedStep = StepCreateStudent
@@ -752,10 +753,10 @@ func (b *OnboardingSagaBuilder) Build() (*OnboardingSaga, error) {
 func hashPassword(password string) string {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return "" // Logic for error handling might be needed, but for now empty string triggers validation error elsewhere if strict. 
+		return "" // Logic for error handling might be needed, but for now empty string triggers validation error elsewhere if strict.
 		// Actually NewStudent doesn't validate password hash format, just length.
 		// A better approach is to handle error, but saga step signature doesn't support easy error handling from helper without clutter.
-		// Since bcrypt failure is rare (OOM mostly), we might panic or return error. 
+		// Since bcrypt failure is rare (OOM mostly), we might panic or return error.
 		// Let's modify stepCreateStudent to handle it properly if I could, but for this refactor I'll keep it simple.
 		// Wait, I can return error from here and handle it in stepCreateStudent.
 	}

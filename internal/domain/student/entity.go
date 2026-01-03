@@ -21,8 +21,6 @@ func (t TelegramID) IsValid() bool {
 	return t > 0
 }
 
-
-
 // XP представляет очки опыта студента.
 type XP int
 
@@ -271,13 +269,13 @@ var (
 
 // NewStudentParams содержит параметры для создания нового студента.
 type NewStudentParams struct {
-	ID          string
-	TelegramID  TelegramID
-	Email       string
+	ID           string
+	TelegramID   TelegramID
+	Email        string
 	PasswordHash string
-	DisplayName string
-	Cohort      Cohort
-	InitialXP   XP
+	DisplayName  string
+	Cohort       Cohort
+	InitialXP    XP
 }
 
 // NewStudent создаёт нового студента с валидацией всех полей.

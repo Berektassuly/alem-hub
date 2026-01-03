@@ -276,13 +276,13 @@ func run(ctx context.Context) error {
 	// 9. ИНИЦИАЛИЗАЦИЯ SCHEDULER И ЗАПУСК JOBS
 	// ─────────────────────────────────────────────────────────────────────────
 	log.Info("initializing scheduler...")
-	
+
 	schedulerConfig := scheduler.DefaultSchedulerConfig()
 	schedulerConfig.Logger = log
 	if loc, err := time.LoadLocation(cfg.AppTimezone); err == nil {
 		schedulerConfig.Timezone = loc
 	}
-	
+
 	sch := scheduler.NewScheduler(schedulerConfig)
 
 	// Job: SyncAllStudents

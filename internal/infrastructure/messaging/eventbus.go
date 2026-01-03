@@ -3,7 +3,6 @@
 package messaging
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════

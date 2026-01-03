@@ -2,13 +2,14 @@
 package query
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
-	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/shared"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -231,7 +232,6 @@ type GetDailyProgressResult struct {
 
 	// StudentID - ID студента.
 	StudentID string `json:"student_id"`
-
 
 	// DisplayName - отображаемое имя.
 	DisplayName string `json:"display_name"`

@@ -50,10 +50,10 @@ type Feature struct {
 
 // FeatureContext provides context for feature flag evaluation.
 type FeatureContext struct {
-	UserID    int64  // Telegram ID
+	UserID int64 // Telegram ID
 
-	Cohort    string // Student cohort (e.g., "2024-spring")
-	IsAdmin   bool   // Is admin user
+	Cohort  string // Student cohort (e.g., "2024-spring")
+	IsAdmin bool   // Is admin user
 }
 
 // Predefined feature flag names.

@@ -2,11 +2,12 @@
 package postgres
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
-	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/alem-hub/alem-community-hub/internal/domain/leaderboard"
+	"github.com/alem-hub/alem-community-hub/internal/domain/student"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"

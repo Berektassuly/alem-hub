@@ -2,15 +2,16 @@
 package telegram
 
 import (
-	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/telegram"
-	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/handler"
-	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 	"context"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/alem-hub/alem-community-hub/internal/infrastructure/external/telegram"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/handler"
+	"github.com/alem-hub/alem-community-hub/internal/interface/telegram/presenter"
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
